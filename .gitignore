@@ -149,10 +149,10 @@ prisma/dev.db-journal
 # Archivos temporales Excel / datos
 ~$*.xlsx
 
-# Carpeta data (opcional según decisión)
+# Carpeta data 
 data/
 
-# Python (por tus scripts de planificación)
+# Python 
 __pycache__/
 *.pyc
 
