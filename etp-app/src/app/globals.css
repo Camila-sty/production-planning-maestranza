@@ -1,0 +1,278 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* Sticky row background tokens used by lead-time-table inline styles */
+:root {
+  --etp-sticky-even: #09090b;
+  --etp-sticky-odd: rgba(24, 24, 27, 0.3);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #18181b;
+}
+::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}
+
+/* ======================================================================
+   ETP LIGHT THEME  — v2: high-contrast warm-stone palette
+   Applied when next-themes sets class="light" on <html>.
+
+   Design rationale:
+   • Page bg (#e8e3db) is visibly tinted so white cards stand out clearly.
+   • Borders are stone-600 strength — always visible on any surface.
+   • Text uses stone-950 → stone-400 scale so every tier is readable.
+   • Colored text (amber, green, red, blue) shifted to -600/-700 variants
+     for proper contrast on light backgrounds.
+   ====================================================================== */
+
+html.light {
+  color-scheme: light;
+  /* Sticky-column backgrounds in lead-time-table (inline styles use vars) */
+  --etp-sticky-even: #ede8e0;   /* matches bg-zinc-950 override → page bg */
+  --etp-sticky-odd:  #ffffff;   /* matches bg-zinc-900/30 override → card white */
+}
+
+/* ── Page & surface backgrounds ──────────────────────────────────────── */
+html.light .bg-zinc-950  { background-color: #e8e3db !important; } /* warm page bg   */
+html.light .bg-zinc-900  { background-color: #ffffff !important; } /* card surface   */
+html.light .bg-zinc-800  { background-color: #d8d2c9 !important; } /* input / chip   */
+html.light .bg-zinc-700  { background-color: #c8c2b8 !important; } /* hover surface  */
+
+/* Opacity variants — cards, headers, alternating rows */
+html.light .bg-zinc-900\/60 { background-color: rgba(255, 255, 255, 0.98) !important; }
+html.light .bg-zinc-900\/80 { background-color: rgba(255, 255, 255, 0.99) !important; }
+html.light .bg-zinc-900\/20 { background-color: rgba(255, 255, 255, 0.55) !important; }
+html.light .bg-zinc-900\/30 { background-color: rgba(255, 255, 255, 0.70) !important; }
+html.light .bg-zinc-800\/50 { background-color: rgba(255, 255, 255, 0.75) !important; } /* input bg */
+html.light .bg-zinc-800\/30 { background-color: rgba(216, 210, 201, 0.45) !important; }
+html.light .bg-zinc-800\/60 { background-color: rgba(216, 210, 201, 0.65) !important; }
+html.light .bg-zinc-950\/20 { background-color: rgba(232, 227, 219, 0.40) !important; }
+html.light .bg-zinc-950\/30 { background-color: rgba(232, 227, 219, 0.55) !important; }
+html.light .bg-zinc-950\/50 { background-color: rgba(232, 227, 219, 0.70) !important; }
+html.light .bg-zinc-950\/70 { background-color: rgba(232, 227, 219, 0.85) !important; }
+
+/* ── Borders ─────────────────────────────────────────────────────────── */
+/* stone-500 (#78716c) base — clearly visible on both white and tinted bg  */
+html.light .border-zinc-800    { border-color: #9c9289 !important; }
+html.light .border-zinc-700    { border-color: #8a7f76 !important; }
+html.light .border-zinc-800\/50 { border-color: rgba(156, 146, 137, 0.65) !important; }
+html.light .border-zinc-800\/80 { border-color: rgba(156, 146, 137, 0.85) !important; }
+html.light .border-zinc-800\/60 { border-color: rgba(156, 146, 137, 0.72) !important; }
+
+/* ── Text — stone-950 → stone-400 scale ─────────────────────────────── */
+html.light .text-white    { color: #0c0a09 !important; } /* stone-950 — primary headings */
+html.light .text-zinc-100 { color: #0c0a09 !important; }
+html.light .text-zinc-200 { color: #1c1917 !important; } /* stone-900 — table body text  */
+html.light .text-zinc-300 { color: #292524 !important; } /* stone-800 — secondary text   */
+html.light .text-zinc-400 { color: #44403c !important; } /* stone-700 — labels, headers  */
+html.light .text-zinc-500 { color: #57534e !important; } /* stone-600 — muted text       */
+html.light .text-zinc-600 { color: #78716c !important; } /* stone-500 — subtle hints     */
+html.light .text-zinc-700 { color: #a8a29e !important; } /* stone-400 — barely-there     */
+
+/* Placeholder text in inputs */
+html.light .placeholder\:text-zinc-600::placeholder { color: #78716c !important; }
+
+/* ── Colored accent text — shifted to dark variants for light bg ──────── */
+/* amber (OT values, accent text) */
+html.light .text-amber-400 { color: #b45309 !important; } /* amber-700 */
+html.light .text-amber-500 { color: #92400e !important; } /* amber-800 */
+/* orange (priority P3 badge) */
+html.light .text-orange-400 { color: #c2410c !important; } /* orange-700 */
+/* green (planned dates) */
+html.light .text-green-400 { color: #15803d !important; } /* green-700 */
+html.light .text-green-300 { color: #166534 !important; } /* green-800 */
+/* red (atraso badge, delete icons) */
+html.light .text-red-400   { color: #dc2626 !important; } /* red-600   */
+/* blue (cotización badge) */
+html.light .text-blue-400  { color: #1d4ed8 !important; } /* blue-700  */
+
+/* ── Hover backgrounds ───────────────────────────────────────────────── */
+html.light .hover\:bg-zinc-800\/30:hover { background-color: rgba(216, 210, 201, 0.50) !important; }
+html.light .hover\:bg-zinc-800:hover     { background-color: #d0c9c0 !important; }
+html.light .hover\:bg-zinc-700:hover     { background-color: #c0b9b0 !important; }
+
+/* ── Hover text ──────────────────────────────────────────────────────── */
+html.light .hover\:text-white:hover { color: #0c0a09 !important; }
+
+/* ── Scrollbar ───────────────────────────────────────────────────────── */
+html.light ::-webkit-scrollbar-track { background: #e8e3db; }
+html.light ::-webkit-scrollbar-thumb { background: #b0a89e; border-radius: 3px; }
+html.light ::-webkit-scrollbar-thumb:hover { background: #8a7f76; }
+
+/* ======================================================================
+   ETP DARK THEME REFINEMENTS
+   Applied when next-themes sets class="dark" on <html>.
+
+   The base dark theme uses Tailwind zinc colors directly (no overrides).
+   These rules improve contrast without changing the overall aesthetic:
+   • Borders: zinc-800 (#27272a) → zinc-700 (#3f3f46) — much more visible
+   • Table headers: stronger background separation
+   • Text: secondary tiers bumped one step brighter
+   • Hover rows: more visible on near-black backgrounds
+   • Badge backgrounds: slightly more opaque
+   ====================================================================== */
+
+/* ── Borders — zinc-700 strength so lines are always visible ─────────── */
+html.dark .border-zinc-800     { border-color: #3f3f46 !important; } /* zinc-700 */
+html.dark .border-zinc-800\/50  { border-color: rgba(63, 63, 70, 0.65) !important; }
+html.dark .border-zinc-800\/80  { border-color: rgba(63, 63, 70, 0.85) !important; }
+html.dark .border-zinc-800\/60  { border-color: rgba(63, 63, 70, 0.75) !important; }
+html.dark .border-zinc-700     { border-color: #52525b !important; } /* zinc-600 */
+
+/* ── Table / section headers — slightly more contrast ───────────────── */
+html.dark .bg-zinc-900\/80 { background-color: rgba(18, 18, 20, 0.95) !important; }
+html.dark .bg-zinc-900\/60 { background-color: rgba(24, 24, 27, 0.72) !important; }
+
+/* ── Text hierarchy — shift secondary/muted one tier brighter ────────── */
+/* Column headers, position numbers, metadata */
+html.dark .text-zinc-500 { color: #a1a1aa !important; } /* zinc-400 */
+/* Labels, VIN, código plazo, secondary columns */
+html.dark .text-zinc-400 { color: #d4d4d8 !important; } /* zinc-300 */
+
+/* ── Hover rows — more visible on near-black backgrounds ─────────────── */
+html.dark .hover\:bg-zinc-800\/30:hover { background-color: rgba(63, 63, 70, 0.40) !important; }
+
+/* ── Alternating rows — enough contrast to read stripes ─────────────── */
+html.dark .bg-zinc-900\/20 { background-color: rgba(24, 24, 27, 0.45) !important; }
+
+/* ── Status badge backgrounds — more opaque so they read on dark bg ─── */
+html.dark .bg-amber-500\/20 { background-color: rgba(245, 158, 11, 0.22) !important; }
+html.dark .bg-blue-500\/20  { background-color: rgba(59,  130, 246, 0.22) !important; }
+html.dark .bg-red-500\/20   { background-color: rgba(239, 68,  68,  0.22) !important; }

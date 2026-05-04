@@ -1,0 +1,107 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model LocalUser {
+  id            String   @id @default(cuid())
+  username      String   @unique
+  password_hash String
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  @@map("local_users")
+}
+
+model SalesPlanning {
+  id                    String    @id @default(cuid())
+  ot                    String?
+  clte_interno          String?
+  cliente               String?
+  codigo_plazo          String?
+  equipo                String?
+  modelo_capacidad      String?
+  camion                String?
+  modelo                String?
+  vin                   String?
+  llegada               DateTime?
+  entrega               DateTime?
+  venta                 String?
+  color_eq              String?
+  oc                    String?
+  factura               String?
+  proximo_a_entrega     Boolean   @default(false)
+  cotizacion            Boolean   @default(false)
+  correo                String?
+  patente               String?
+  neumatico_de_repuesto String?
+  n_recepcion           String?
+  color_cabina          String?
+  atraso                Int?
+  prioridad             Int?      @default(5)
+  created_at            DateTime  @default(now())
+  updated_at            DateTime  @updatedAt
+  created_by            String?
+  updated_by            String?
+
+  optimized         SalesPlanningOptimized[]
+  process_schedules OptimizedProcessSchedule[]
+
+  @@map("sales_planning")
+}
+
+model SalesPlanningOptimized {
+  id                String         @id @default(cuid())
+  sales_planning_id String?
+  sales_planning    SalesPlanning? @relation(fields: [sales_planning_id], references: [id], onDelete: SetNull)
+  position          Int            @default(0)
+  start_date        DateTime?
+  end_date          DateTime?
+  prioridad         Int?
+  codigo_plazo      String?
+  created_at        DateTime       @default(now())
+  updated_at        DateTime       @updatedAt
+
+  @@map("sales_planning_optimized")
+}
+
+model LeadTimeByCode {
+  id                 String   @id @default(cuid())
+  codigo_plazo       String
+  descripcion_equipo String?
+  proceso            String
+  duracion_dias      Int
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+
+  @@unique([codigo_plazo, proceso])
+  @@map("lead_time_by_code")
+}
+
+model ProcessCapacity {
+  id                String   @id @default(cuid())
+  proceso           String   @unique
+  orden             Int
+  capacidad_por_dia Int
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  @@map("process_capacity")
+}
+
+model OptimizedProcessSchedule {
+  id                String        @id @default(cuid())
+  sales_planning_id String
+  proceso           String
+  orden             Int
+  start_date        DateTime
+  end_date          DateTime
+  duration_days     Int
+  created_at        DateTime      @default(now())
+  sales_planning    SalesPlanning @relation(fields: [sales_planning_id], references: [id], onDelete: Cascade)
+
+  @@map("optimized_process_schedule")
+}
