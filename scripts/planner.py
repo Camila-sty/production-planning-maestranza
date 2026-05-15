@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 """
-CP-SAT Planning Engine for ETP Maestranza.
+CP-SAT Planning Engine for ETP Maestranza — v2
 
-Each sales_planning record with codigo_plazo + llegada + prioridad is a JOB.
-Each JOB has an ordered sequence of processes defined by its codigo_plazo.
-Processes are ordered globally by process_capacity.orden.
-Capacity constraints limit how many jobs can be in a process on any given working day.
+Changes from v1:
+  - Planning versioning: creates a PlanningRun record, archives old runs.
+  - Buffer adjustments: applies planning_buffer_days if set after last active run.
+  - Special working days: user-defined working days (e.g. weekends, holidays).
+  - Slot assignment: each process task gets a slot number (1..capacity).
+  - Does NOT delete previous runs — supports undo via the web UI.
+
+Eligibility for planning:
+  - requires: codigo_plazo, llegada, prioridad
+  - atraso defaults to 0 if null
 
 Usage: python3 scripts/planner.py [db_path]
 Default db_path: etp-app/dev.db
@@ -29,36 +35,84 @@ DB_PATH = sys.argv[1] if len(sys.argv) > 1 else os.path.join(PROJECT_ROOT, "etp-
 
 
 # ---------------------------------------------------------------------------
-# Working-day helpers
+# Working-day helpers (calendar-based to support special days)
 # ---------------------------------------------------------------------------
 
-def find_prev_monday(d: date) -> date:
-    """Return d if Monday, else the most recent Monday before d."""
-    return d - timedelta(days=d.weekday())
+def build_working_calendar(ref_date: date, horizon_days: int, special_days: set) -> list:
+    """
+    Build an ordered list of working days starting at ref_date.
+    special_days: set of date objects treated as working days even if Sat/Sun.
+    Returns list of dates (at least horizon_days long).
+    """
+    calendar = []
+    cur = ref_date
+    # Build enough days to cover the horizon
+    safety = horizon_days + 500
+    while len(calendar) < safety:
+        dow = cur.weekday()  # 0=Mon, 6=Sun
+        if dow < 5 or cur in special_days:
+            calendar.append(cur)
+        cur += timedelta(days=1)
+    return calendar
 
 
-def date_to_workday(d: date, ref: date) -> int:
-    """Count working days (Mon-Fri) in [ref, d).  ref must be a Monday."""
-    if d <= ref:
-        return 0
-    total_days = (d - ref).days
-    full_weeks, extra = divmod(total_days, 7)
-    workdays = full_weeks * 5 + min(extra, 5)
-    return workdays
+def build_date_index(calendar: list) -> dict:
+    """Map date -> workday index."""
+    return {d: i for i, d in enumerate(calendar)}
 
 
-def workday_to_date(n: int, ref: date) -> date:
-    """Return the date that is exactly n working days after ref."""
+def date_to_workday(d: date, calendar: list, date_index: dict) -> int:
+    """Convert a calendar date to a workday index (0-based)."""
+    if d in date_index:
+        return date_index[d]
+    # Find the first working day on or after d
+    for i, cal_d in enumerate(calendar):
+        if cal_d >= d:
+            return i
+    return len(calendar)
+
+
+def workday_to_date(n: int, calendar: list) -> date:
+    """Convert workday index to date."""
     if n <= 0:
-        return ref
-    full_weeks, extra = divmod(n, 5)
-    result = ref + timedelta(weeks=full_weeks, days=extra)
-    # If extra lands on a weekend, advance to Monday
-    wd = result.weekday()
-    if wd == 5:          # Saturday
-        result += timedelta(days=2)
-    elif wd == 6:        # Sunday
-        result += timedelta(days=1)
+        return calendar[0]
+    if n < len(calendar):
+        return calendar[n]
+    return calendar[-1]
+
+
+# ---------------------------------------------------------------------------
+# Slot assignment
+# ---------------------------------------------------------------------------
+
+def assign_slots(proc_tasks: list, capacity: int) -> dict:
+    """
+    Greedy slot assignment for tasks in a single process.
+
+    proc_tasks: list of (job_id, start_day, end_day)
+    capacity: max concurrent tasks in this process
+
+    Returns: {job_id: slot_number (1-indexed)}
+    """
+    # Sort by start day, then job_id for determinism
+    sorted_tasks = sorted(proc_tasks, key=lambda x: (x[1], x[0]))
+
+    # slot_available[i] = next free workday for slot i (0-indexed slots)
+    slot_available = [0] * capacity
+    result = {}
+
+    for job_id, start_day, end_day in sorted_tasks:
+        assigned = None
+        # Find the earliest free slot
+        for i in range(capacity):
+            if slot_available[i] <= start_day:
+                assigned = i
+                break
+        if assigned is None:
+            assigned = 0  # fallback (CP-SAT guarantees capacity)
+        slot_available[assigned] = end_day
+        result[job_id] = assigned + 1  # 1-indexed
+
     return result
 
 
@@ -74,7 +128,55 @@ def main():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
 
-    # --- Load process capacities (only valid: orden>0, capacidad>0) ---
+    # --- Cleanup orphan records from pre-versioning era ---
+    orphan_ops = conn.execute(
+        "SELECT COUNT(*) FROM optimized_process_schedule WHERE planning_run_id IS NULL"
+    ).fetchone()[0]
+    orphan_opt = conn.execute(
+        "SELECT COUNT(*) FROM sales_planning_optimized WHERE planning_run_id IS NULL"
+    ).fetchone()[0]
+    if orphan_ops > 0 or orphan_opt > 0:
+        print(f"  Cleaning up {orphan_ops} orphan process schedules, {orphan_opt} orphan optimized records (pre-versioning)...")
+        conn.execute("DELETE FROM optimized_process_schedule WHERE planning_run_id IS NULL")
+        conn.execute("DELETE FROM sales_planning_optimized WHERE planning_run_id IS NULL")
+        conn.commit()
+
+    # --- Manage planning run versioning ---
+    # Find current active run
+    active_run = conn.execute(
+        "SELECT id, created_at FROM planning_run WHERE status = 'ACTIVE' ORDER BY created_at DESC LIMIT 1"
+    ).fetchone()
+
+    # Archive old PREVIOUS runs
+    conn.execute("UPDATE planning_run SET status = 'ARCHIVED' WHERE status = 'PREVIOUS'")
+
+    # Demote current ACTIVE to PREVIOUS
+    if active_run:
+        conn.execute(
+            "UPDATE planning_run SET status = 'PREVIOUS' WHERE id = ?",
+            (active_run["id"],)
+        )
+
+    # Determine next version number
+    max_version = conn.execute(
+        "SELECT MAX(version) FROM planning_run"
+    ).fetchone()[0] or 0
+    new_version = max_version + 1
+
+    # Create new ACTIVE planning run
+    now = datetime.utcnow().isoformat()
+    new_run_id = f"run_{now.replace(':', '').replace('-', '').replace('.', '')[:20]}"
+    conn.execute(
+        "INSERT INTO planning_run (id, version, status, created_at) VALUES (?, ?, 'ACTIVE', ?)",
+        (new_run_id, new_version, now)
+    )
+    conn.commit()
+
+    print(f"PlanningRun created: {new_run_id} (v{new_version})")
+    if active_run:
+        print(f"  Previous run {active_run['id']} archived as PREVIOUS")
+
+    # --- Load process capacities ---
     processes = conn.execute("""
         SELECT proceso, orden, capacidad_por_dia
         FROM process_capacity
@@ -88,24 +190,66 @@ def main():
         sys.exit(1)
 
     proc_list = [dict(p) for p in processes]
-    proc_order = {p["proceso"]: p for p in proc_list}  # name -> data
+    proc_order = {p["proceso"]: p for p in proc_list}
 
-    # --- Load lead times (only duracion > 0) ---
+    # --- Load lead times ---
     lt_rows = conn.execute("""
         SELECT codigo_plazo, proceso, duracion_dias
         FROM lead_time_by_code
         WHERE duracion_dias > 0
     """).fetchall()
 
-    # Build lookup: codigo_plazo (str) -> {proceso: duracion_dias}
-    lt_lookup: dict[str, dict[str, int]] = {}
+    lt_lookup: dict = {}
     for lt in lt_rows:
         cp = str(lt["codigo_plazo"]).strip()
         if cp not in lt_lookup:
             lt_lookup[cp] = {}
         lt_lookup[cp][lt["proceso"]] = lt["duracion_dias"]
 
-    # --- Load jobs ---
+    # --- Load special working days (not yet used in any planning run) ---
+    special_rows = conn.execute("""
+        SELECT date FROM special_working_day
+        WHERE used_in_planning = 0
+    """).fetchall()
+
+    special_days: set = set()
+    for row in special_rows:
+        date_str = str(row["date"])[:10]
+        try:
+            special_days.add(date.fromisoformat(date_str))
+        except ValueError:
+            pass
+
+    if special_days:
+        print(f"  Special working days loaded: {sorted(special_days)}")
+
+    # --- Load buffer adjustments (only buffers set AFTER the previous active run) ---
+    # active_run here is the OLD active run (now PREVIOUS), so buffers must be newer
+    buffer_cutoff = active_run["created_at"] if active_run else None
+
+    if buffer_cutoff:
+        buffer_rows = conn.execute("""
+            SELECT id, planning_buffer_days, planning_buffer_at
+            FROM sales_planning
+            WHERE planning_buffer_days IS NOT NULL
+              AND planning_buffer_at IS NOT NULL
+              AND planning_buffer_at > datetime(?)
+        """, (buffer_cutoff,)).fetchall()
+    else:
+        buffer_rows = conn.execute("""
+            SELECT id, planning_buffer_days, planning_buffer_at
+            FROM sales_planning
+            WHERE planning_buffer_days IS NOT NULL
+        """).fetchall()
+
+    buffer_map: dict = {}
+    for row in buffer_rows:
+        buffer_map[row["id"]] = int(row["planning_buffer_days"])
+
+    if buffer_map:
+        print(f"  Buffer adjustments applied: {len(buffer_map)} records")
+
+    # --- Load jobs (must have codigo_plazo + llegada + prioridad) ---
     jobs_raw = conn.execute("""
         SELECT id, codigo_plazo, llegada, prioridad, atraso
         FROM sales_planning
@@ -128,7 +272,16 @@ def main():
             "llegada":      llegada_date,
             "prioridad":    int(j["prioridad"]) if j["prioridad"] else 5,
             "atraso":       int(j["atraso"])    if j["atraso"]    else 0,
+            "buffer":       buffer_map.get(j["id"], 0),
         })
+
+    # Count excluded records (no llegada)
+    total_records = conn.execute(
+        "SELECT COUNT(*) FROM sales_planning WHERE codigo_plazo IS NOT NULL AND prioridad IS NOT NULL"
+    ).fetchone()[0]
+    excluded_count = total_records - len(jobs)
+    if excluded_count > 0:
+        print(f"  Excluded {excluded_count} record(s) without llegada from planning")
 
     if not jobs:
         print("No plannable jobs found (need codigo_plazo + llegada + prioridad).")
@@ -136,8 +289,7 @@ def main():
         return
 
     # --- Build task list per job ---
-    # A task exists only when duracion > 0 AND proceso has valid capacity & order
-    job_tasks: list[list[dict]] = []
+    job_tasks: list = []
     for job in jobs:
         cp = job["codigo_plazo"]
         lt = lt_lookup.get(cp, {})
@@ -156,49 +308,51 @@ def main():
         if not tasks:
             print(f"  WARNING: Job {job['id']} (codigo_plazo={cp}) has no applicable processes.")
 
-    # --- Reference date (Monday at or before earliest llegada) ---
+    # --- Build working calendar ---
     min_llegada = min(j["llegada"] for j in jobs)
-    ref_date = find_prev_monday(min_llegada)
+    # ref_date = first working day on or before min_llegada
+    # Start from the Monday of the week of min_llegada
+    ref_date = min_llegada - timedelta(days=min_llegada.weekday())
 
-    # --- Compute planning horizon ---
     max_sum_dur = max((sum(t["duration"] for t in tasks) for tasks in job_tasks if tasks), default=100)
-    max_llegada_day = max(date_to_workday(j["llegada"], ref_date) for j in jobs)
-    HORIZON = max_llegada_day + max_sum_dur * 3 + 200
+    max_llegada_offset = max((j["llegada"] - ref_date).days for j in jobs)
+    HORIZON = max_llegada_offset + max_sum_dur * 3 + 300  # in calendar days
 
-    print(f"Jobs: {len(jobs)}  |  Processes: {len(proc_list)}  |  Horizon: {HORIZON} working days")
+    calendar = build_working_calendar(ref_date, HORIZON, special_days)
+    date_index = build_date_index(calendar)
+    CAL_SIZE = len(calendar)
+
+    print(f"Jobs: {len(jobs)}  |  Processes: {len(proc_list)}  |  Calendar size: {CAL_SIZE} working days")
     print(f"Reference date: {ref_date}")
 
     # --- Build CP-SAT model ---
     model = cp_model.CpModel()
 
-    starts:    dict[tuple[int, int], cp_model.IntVar] = {}
-    ends:      dict[tuple[int, int], cp_model.IntVar] = {}
-    intervals: dict[tuple[int, int], cp_model.IntervalVar] = {}
+    starts:    dict = {}
+    ends:      dict = {}
+    intervals: dict = {}
 
     for ji, (job, tasks) in enumerate(zip(jobs, job_tasks)):
-        llegada_day = date_to_workday(job["llegada"], ref_date)
+        llegada_day = date_to_workday(job["llegada"], calendar, date_index)
         for ti, task in enumerate(tasks):
             dur = task["duration"]
-            s = model.new_int_var(llegada_day, HORIZON,        f"s_{ji}_{ti}")
-            e = model.new_int_var(llegada_day, HORIZON + dur,  f"e_{ji}_{ti}")
-            iv = model.new_interval_var(s, dur, e,             f"iv_{ji}_{ti}")
+            s  = model.new_int_var(llegada_day, CAL_SIZE,          f"s_{ji}_{ti}")
+            e  = model.new_int_var(llegada_day, CAL_SIZE + dur,    f"e_{ji}_{ti}")
+            iv = model.new_interval_var(s, dur, e,                 f"iv_{ji}_{ti}")
             starts[(ji, ti)]    = s
             ends[(ji, ti)]      = e
             intervals[(ji, ti)] = iv
 
         if tasks:
-            # First task must start on or after llegada
             model.add(starts[(ji, 0)] >= llegada_day)
-            # Precedence: task ti starts after task ti-1 finishes
             for ti in range(1, len(tasks)):
                 model.add(starts[(ji, ti)] >= ends[(ji, ti - 1)])
 
-    # --- Capacity constraints (cumulative per process) ---
+    # --- Capacity constraints ---
     for proc in proc_list:
         pname    = proc["proceso"]
         capacity = proc["capacidad_por_dia"]
-        ivs  = []
-        dmds = []
+        ivs, dmds = [], []
         for ji, tasks in enumerate(job_tasks):
             for ti, task in enumerate(tasks):
                 if task["proceso"] == pname:
@@ -207,21 +361,8 @@ def main():
         if ivs:
             model.add_cumulative(ivs, dmds, capacity)
 
-    # --- Objective: priority-ordered starts + weighted tardiness ---
-    #
-    # Two-component objective:
-    #   1. START-TIME component (dominates): minimise sum(start[j][0] * priority_weight[j])
-    #      priority_weight = (11 - prioridad) * PRIORITY_SCALE
-    #      prioridad=1 → weight=10*SCALE  (solver strongly pulls it to earliest slot)
-    #      prioridad=10 → weight=1*SCALE  (least pull)
-    #      This forces high-priority jobs to win capacity conflicts by starting first.
-    #
-    #   2. TARDINESS component: minimise sum(tardiness[j] * weight[j])
-    #      Same logic as before; subordinate to component 1 via PRIORITY_SCALE.
-    #
-    # PRIORITY_SCALE must exceed the maximum tardiness weight (100) so that saving
-    # one working day for a high-priority job always beats any tardiness benefit.
-    PRIORITY_SCALE = 1_000  # >> max tardiness weight (100)
+    # --- Objective ---
+    PRIORITY_SCALE = 1_000
 
     tard_terms:  list = []
     start_terms: list = []
@@ -230,22 +371,17 @@ def main():
         if not tasks:
             continue
         total_dur   = sum(t["duration"] for t in tasks)
-        llegada_day = date_to_workday(job["llegada"], ref_date)
-        atraso      = job["atraso"]
+        llegada_day = date_to_workday(job["llegada"], calendar, date_index)
+        atraso      = job["atraso"] + job["buffer"]  # apply buffer to atraso
         due_day     = llegada_day + total_dur + atraso
         prioridad   = job["prioridad"]
 
-        # Tardiness term
         last_ti = len(tasks) - 1
-        tard = model.new_int_var(0, HORIZON, f"tard_{ji}")
-        # tard = max(0, end_of_last_task - due_day)
+        tard = model.new_int_var(0, CAL_SIZE * 2, f"tard_{ji}")
         model.add_max_equality(tard, [ends[(ji, last_ti)] - due_day, 0])
         tard_weight = max(1, 100 // max(1, prioridad))
         tard_terms.append(tard * tard_weight)
 
-        # Start-time ordering term
-        # Higher-importance jobs (low prioridad) get a larger coefficient so the
-        # solver prefers to schedule them into earlier slots when capacity is tight.
         start_weight = (11 - prioridad) * PRIORITY_SCALE
         start_terms.append(starts[(ji, 0)] * start_weight)
 
@@ -263,77 +399,112 @@ def main():
     status = solver.solve(model)
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        # Rollback: restore old active run
+        conn.execute(
+            "UPDATE planning_run SET status = 'ACTIVE' WHERE status = 'PREVIOUS' ORDER BY created_at DESC LIMIT 1"
+        )
+        conn.execute(
+            "UPDATE planning_run SET status = 'ARCHIVED' WHERE id = ?",
+            (new_run_id,)
+        )
+        conn.commit()
         print(f"No solution found. Status: {solver.status_name(status)}")
         conn.close()
         sys.exit(1)
 
     print(f"Solution: {solver.status_name(status)}  |  Objective: {solver.objective_value:.1f}")
 
-    # --- Write results ---
-    now = datetime.utcnow().isoformat()
-
-    conn.execute("DELETE FROM optimized_process_schedule")
-    conn.execute("DELETE FROM sales_planning_optimized")
-
+    # --- Compute slot assignments per process ---
+    # For each process, collect (job_id, start_day, end_day) and assign slots
+    proc_task_list: dict = {p["proceso"]: [] for p in proc_list}
     for ji, (job, tasks) in enumerate(zip(jobs, job_tasks)):
-        if not tasks:
-            continue
-
-        first_ti = 0
-        last_ti  = len(tasks) - 1
-
-        job_start_day  = solver.value(starts[(ji, first_ti)])
-        job_end_day    = solver.value(ends[(ji, last_ti)])
-        job_start_date = workday_to_date(job_start_day,       ref_date)
-        # end_day from CP-SAT is exclusive (first slot NOT in job).
-        # Subtract 1 to get the last inclusive working day.
-        job_end_date   = workday_to_date(job_end_day - 1, ref_date)
-
-        opt_id = f"opt_{job['id'][:16]}_{ji}"
-        conn.execute("""
-            INSERT INTO sales_planning_optimized
-                (id, sales_planning_id, position, start_date, end_date, prioridad, codigo_plazo, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            opt_id,
-            job["id"],
-            ji + 1,
-            job_start_date.isoformat(),
-            job_end_date.isoformat(),
-            job["prioridad"],
-            job["codigo_plazo"],
-            now, now,
-        ))
-
         for ti, task in enumerate(tasks):
-            task_start_day  = solver.value(starts[(ji, ti)])
-            task_end_day    = solver.value(ends[(ji, ti)])
-            task_start_date = workday_to_date(task_start_day,       ref_date)
-            # end_day is exclusive; store last inclusive working day.
-            task_end_date   = workday_to_date(task_end_day - 1, ref_date)
+            pname = task["proceso"]
+            start_day = solver.value(starts[(ji, ti)])
+            end_day   = solver.value(ends[(ji, ti)])
+            proc_task_list[pname].append((job["id"], start_day, end_day))
 
-            sched_id = f"ops_{job['id'][:14]}_{ji}_{ti}"
+    slot_assignments: dict = {}  # (job_id, proceso) -> slot
+    for proc in proc_list:
+        pname    = proc["proceso"]
+        capacity = proc["capacidad_por_dia"]
+        slots = assign_slots(proc_task_list[pname], capacity)
+        for job_id, slot_num in slots.items():
+            slot_assignments[(job_id, pname)] = slot_num
+
+    # --- Write results (all-or-nothing) ---
+    try:
+        for ji, (job, tasks) in enumerate(zip(jobs, job_tasks)):
+            if not tasks:
+                continue
+
+            first_ti = 0
+            last_ti  = len(tasks) - 1
+
+            job_start_day  = solver.value(starts[(ji, first_ti)])
+            job_end_day    = solver.value(ends[(ji, last_ti)])
+            job_start_date = workday_to_date(job_start_day,   calendar)
+            job_end_date   = workday_to_date(job_end_day - 1, calendar)
+
+            opt_id = f"opt_{new_run_id[-8:]}_{job['id'][:12]}_{ji}"
             conn.execute("""
-                INSERT INTO optimized_process_schedule
-                    (id, sales_planning_id, proceso, orden, start_date, end_date, duration_days, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO sales_planning_optimized
+                    (id, sales_planning_id, planning_run_id, position, start_date, end_date, prioridad, codigo_plazo, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                sched_id,
-                job["id"],
-                task["proceso"],
-                task["orden"],
-                task_start_date.isoformat(),
-                task_end_date.isoformat(),
-                task["duration"],
-                now,
+                opt_id, job["id"], new_run_id, ji + 1,
+                job_start_date.isoformat(), job_end_date.isoformat(),
+                job["prioridad"], job["codigo_plazo"], now, now,
             ))
 
-        print(f"  Job {ji+1}: {job['id'][:8]}… | {job['codigo_plazo']:>4} | "
-              f"{job_start_date} → {job_end_date} | P{job['prioridad']}")
+            for ti, task in enumerate(tasks):
+                task_start_day  = solver.value(starts[(ji, ti)])
+                task_end_day    = solver.value(ends[(ji, ti)])
+                task_start_date = workday_to_date(task_start_day,   calendar)
+                task_end_date   = workday_to_date(task_end_day - 1, calendar)
+                slot = slot_assignments.get((job["id"], task["proceso"]), 1)
+
+                sched_id = f"ops_{new_run_id[-8:]}_{job['id'][:10]}_{ji}_{ti}"
+                conn.execute("""
+                    INSERT INTO optimized_process_schedule
+                        (id, sales_planning_id, planning_run_id, proceso, orden, slot, start_date, end_date, duration_days, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    sched_id, job["id"], new_run_id,
+                    task["proceso"], task["orden"], slot,
+                    task_start_date.isoformat(), task_end_date.isoformat(),
+                    task["duration"], now,
+                ))
+
+            print(f"  Job {ji+1}: {job['id'][:8]}… | {job['codigo_plazo']:>4} | "
+                  f"{job_start_date} → {job_end_date} | P{job['prioridad']}"
+                  + (f" | buf={job['buffer']:+d}d" if job['buffer'] != 0 else ""))
+
+        # --- Mark special working days as used ---
+        special_day_ids = conn.execute(
+            "SELECT id FROM special_working_day WHERE used_in_planning = 0"
+        ).fetchall()
+        for row in special_day_ids:
+            conn.execute(
+                "UPDATE special_working_day SET used_in_planning = 1, planning_run_id = ? WHERE id = ?",
+                (new_run_id, row["id"])
+            )
+
+    except Exception as e:
+        conn.rollback()
+        # Restore previous ACTIVE run and delete failed run
+        conn.execute(
+            "UPDATE planning_run SET status = 'ACTIVE' WHERE status = 'PREVIOUS' ORDER BY created_at DESC LIMIT 1"
+        )
+        conn.execute("DELETE FROM planning_run WHERE id = ?", (new_run_id,))
+        conn.commit()
+        conn.close()
+        print(f"ERROR writing results: {e}")
+        sys.exit(1)
 
     conn.commit()
     conn.close()
-    print("Planning complete. Results written to DB.")
+    print(f"Planning complete. {len(jobs)} jobs written to DB (run {new_run_id}).")
 
 
 if __name__ == "__main__":

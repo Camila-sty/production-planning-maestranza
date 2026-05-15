@@ -2,7 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { getUser } from "@/lib/auth";
-import { salesPlanningSchema } from "@/lib/validations";
+import { salesPlanningSchema, planningBufferSchema } from "@/lib/validations";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
@@ -13,14 +13,13 @@ export async function createRecord(data: z.infer<typeof salesPlanningSchema>) {
   const parsed = salesPlanningSchema.safeParse(data);
   if (!parsed.success) return { error: parsed.error.flatten().fieldErrors };
 
-  const { llegada, entrega, ...rest } = parsed.data;
+  const { llegada, ...rest } = parsed.data;
 
   try {
     const record = await prisma.salesPlanning.create({
       data: {
         ...rest,
         llegada: llegada ? new Date(llegada) : null,
-        entrega: entrega ? new Date(entrega) : null,
         created_by: user.email,
         updated_by: user.email,
       },
@@ -44,7 +43,7 @@ export async function updateRecord(
   const parsed = salesPlanningSchema.safeParse(data);
   if (!parsed.success) return { error: parsed.error.flatten().fieldErrors };
 
-  const { llegada, entrega, ...rest } = parsed.data;
+  const { llegada, ...rest } = parsed.data;
 
   try {
     const record = await prisma.salesPlanning.update({
@@ -52,7 +51,6 @@ export async function updateRecord(
       data: {
         ...rest,
         llegada: llegada ? new Date(llegada) : null,
-        entrega: entrega ? new Date(entrega) : null,
         updated_by: user.email,
       },
     });
@@ -88,5 +86,34 @@ export async function getRecords() {
   } catch (e) {
     console.error(e);
     return { error: "Error al obtener los registros" };
+  }
+}
+
+export async function upsertBuffer(
+  salesPlanningId: string,
+  data: z.infer<typeof planningBufferSchema>
+) {
+  const user = await getUser();
+  if (!user) return { error: "No autenticado" };
+
+  const parsed = planningBufferSchema.safeParse(data);
+  if (!parsed.success) return { error: parsed.error.flatten().fieldErrors };
+
+  try {
+    await prisma.salesPlanning.update({
+      where: { id: salesPlanningId },
+      data: {
+        planning_buffer_days: parsed.data.buffer_days,
+        planning_buffer_note: parsed.data.note ?? null,
+        planning_buffer_at: new Date(),
+        updated_by: user.email,
+      },
+    });
+
+    revalidatePath("/");
+    return { success: true };
+  } catch (e) {
+    console.error(e);
+    return { error: "Error al guardar el buffer" };
   }
 }

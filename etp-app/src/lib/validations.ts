@@ -29,21 +29,20 @@ export const salesPlanningSchema = z.object({
   cliente: z.string().optional(),
   // Required for planning
   codigo_plazo: z.string().min(1, "Requerido"),
-  llegada: z.string().min(1, "Requerido"),
   prioridad: z.coerce.number().int().min(1, "Mínimo 1").max(10, "Máximo 10"),
   atraso: z.coerce.number().int().min(0, "Mínimo 0 días"),
+  // llegada is optional — records without llegada won't be included in planning
+  llegada: z.string().optional(),
   // Optional fields
   equipo: z.string().optional(),
   modelo_capacidad: z.string().optional(),
   camion: z.string().optional(),
   modelo: z.string().optional(),
   vin: z.string().optional(),
-  entrega: z.string().optional(),
   venta: z.string().optional(),
   color_eq: z.string().optional(),
   oc: z.string().optional(),
   factura: z.string().optional(),
-  proximo_a_entrega: z.boolean().optional().default(false),
   cotizacion: z.boolean().optional().default(false),
   correo: z.string().email("Email inválido").optional().or(z.literal("")),
   patente: z.string().optional(),
@@ -71,3 +70,18 @@ export const processCapacitySchema = z.object({
   capacidad_por_dia: z.coerce.number().int().min(0, "Mínimo 0"),
 });
 export type ProcessCapacityInput = z.infer<typeof processCapacitySchema>;
+
+// --- Buffer schema ---
+export const planningBufferSchema = z.object({
+  buffer_days: z.coerce.number().int().min(-365, "Mínimo -365").max(365, "Máximo 365"),
+  note: z.string().optional(),
+});
+export type PlanningBufferInput = z.infer<typeof planningBufferSchema>;
+
+// --- Special working day schema ---
+export const specialWorkingDaySchema = z.object({
+  date: z.string().min(1, "Requerido"),
+  type: z.enum(["HOLIDAY_WORKING", "WEEKEND_WORKING", "EXTRA_WORKING_DAY"]).default("WEEKEND_WORKING"),
+  description: z.string().optional(),
+});
+export type SpecialWorkingDayInput = z.infer<typeof specialWorkingDaySchema>;

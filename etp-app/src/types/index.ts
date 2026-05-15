@@ -10,12 +10,10 @@ export type SalesPlanning = {
   modelo: string | null;
   vin: string | null;
   llegada: Date | null;
-  entrega: Date | null;
   venta: string | null;
   color_eq: string | null;
   oc: string | null;
   factura: string | null;
-  proximo_a_entrega: boolean;
   cotizacion: boolean;
   correo: string | null;
   patente: string | null;
@@ -24,6 +22,9 @@ export type SalesPlanning = {
   color_cabina: string | null;
   atraso: number | null;
   prioridad: number | null;
+  planning_buffer_days: number | null;
+  planning_buffer_note: string | null;
+  planning_buffer_at: Date | null;
   created_at: Date;
   updated_at: Date;
   created_by: string | null;
@@ -52,6 +53,7 @@ export type ProcessCapacity = {
 export type OptimizedResult = {
   id: string;
   sales_planning_id: string | null;
+  planning_run_id: string | null;
   position: number;
   start_date: Date | null;
   end_date: Date | null;
@@ -59,4 +61,24 @@ export type OptimizedResult = {
   codigo_plazo: string | null;
   created_at: Date;
   sales_planning?: SalesPlanning | null;
+};
+
+export type PlanningRun = {
+  id: string;
+  version: number;
+  status: string;
+  created_at: Date;
+  created_by: string | null;
+  notes: string | null;
+};
+
+export type SpecialWorkingDay = {
+  id: string;
+  date: Date;
+  type: string;
+  description: string | null;
+  created_at: Date;
+  created_by: string | null;
+  planning_run_id: string | null;
+  used_in_planning: boolean;
 };

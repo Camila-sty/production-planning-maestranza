@@ -8,11 +8,12 @@ import { ProcessCapacityTable } from "@/components/planning/process-capacity-tab
 import { LeadTimeTable } from "@/components/planning/lead-time-table";
 import { PlanButton } from "@/components/planning/plan-button";
 import { OptimizedTable } from "@/components/planning/optimized-table";
+import { SpecialDaysPanel } from "@/components/planning/special-days-panel";
 import { logout } from "@/actions/auth";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ThemedToaster } from "@/components/themed-toaster";
-import type { SalesPlanning, LeadTimeByCode, ProcessCapacity, OptimizedResult } from "@/types";
+import type { SalesPlanning, LeadTimeByCode, ProcessCapacity, OptimizedResult, SpecialWorkingDay } from "@/types";
 
 export const dynamic = "force-dynamic";
 
@@ -20,18 +21,32 @@ export default async function HomePage() {
   const user = await getUser();
   if (!user) redirect("/auth/login");
 
-  const [records, processCapacities, leadTimes, optimizedRaw] = await Promise.all([
+  // Find active and previous planning runs
+  const [activeRun, previousRun] = await Promise.all([
+    prisma.planningRun.findFirst({ where: { status: "ACTIVE" } }),
+    prisma.planningRun.findFirst({ where: { status: "PREVIOUS" } }),
+  ]);
+
+  const [records, processCapacities, leadTimes, optimizedRaw, specialDays] = await Promise.all([
     prisma.salesPlanning.findMany({ orderBy: { created_at: "asc" } }),
     prisma.processCapacity.findMany({ orderBy: { orden: "asc" } }),
     prisma.leadTimeByCode.findMany({ orderBy: [{ codigo_plazo: "asc" }, { proceso: "asc" }] }),
-    prisma.salesPlanningOptimized.findMany({
-      where: { start_date: { not: null } },
-      orderBy: { position: "asc" },
-      include: { sales_planning: true },
-    }),
+    activeRun
+      ? prisma.salesPlanningOptimized.findMany({
+          where: { planning_run_id: activeRun.id, start_date: { not: null } },
+          orderBy: { position: "asc" },
+          include: { sales_planning: true },
+        })
+      : prisma.salesPlanningOptimized.findMany({
+          where: { start_date: { not: null } },
+          orderBy: { position: "asc" },
+          include: { sales_planning: true },
+        }),
+    prisma.specialWorkingDay.findMany({ orderBy: { date: "asc" } }),
   ]);
 
   const hasResults = optimizedRaw.length > 0;
+  const hasPrevious = previousRun != null;
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
@@ -97,27 +112,50 @@ export default async function HomePage() {
         {/* ── 3. Motor de Planificación ── */}
         <section>
           <SectionTitle>Motor de Planificación (CP-SAT)</SectionTitle>
-          <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5 space-y-5">
+          <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5 space-y-6">
             <div>
               <p className="text-xs text-zinc-500 mb-3">
                 Ejecuta el solucionador OR-Tools CP-SAT sobre todos los equipos con Código Plazo, Llegada y Prioridad definidos.
                 Respeta capacidades por proceso y optimiza según prioridad y atraso.
+                Equipos sin fecha de llegada son excluidos automáticamente.
               </p>
-              <PlanButton hasResults={hasResults} />
+              <PlanButton hasResults={hasResults} hasPrevious={hasPrevious} />
             </div>
+
+            {activeRun && (
+              <div className="text-xs text-zinc-600">
+                Planificación activa v{activeRun.version} — generada el{" "}
+                {new Date(activeRun.created_at).toLocaleString("es-CL")}
+                {hasPrevious && (
+                  <span className="ml-2 text-zinc-700">| Anterior disponible para restaurar</span>
+                )}
+              </div>
+            )}
+
             {hasResults && (
               <div>
                 <p className="text-xs text-zinc-500 mb-2">
-                  {optimizedRaw.length} equipos planificados — última ejecución:{" "}
-                  {new Date(optimizedRaw[0].created_at).toLocaleString("es-CL")}
+                  {optimizedRaw.length} equipos planificados
                 </p>
                 <OptimizedTable records={optimizedRaw as unknown as OptimizedResult[]} />
               </div>
             )}
+
+            {/* Días especiales */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-0.5 h-4 bg-amber-500/60 rounded-full" />
+                <h3 className="text-sm font-medium text-zinc-300">Días Especiales de Trabajo</h3>
+              </div>
+              <SpecialDaysPanel
+                specialDays={specialDays as unknown as SpecialWorkingDay[]}
+                activePlanRunCreatedAt={activeRun ? new Date(activeRun.created_at) : null}
+              />
+            </div>
           </div>
         </section>
 
-        {/* ── 4. Reglas: Capacidad por Proceso ── */}
+        {/* ── 4. Capacidad por Proceso ── */}
         <section>
           <SectionTitle count={processCapacities.length}>Capacidad por Proceso</SectionTitle>
           <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5">
@@ -129,7 +167,7 @@ export default async function HomePage() {
           </div>
         </section>
 
-        {/* ── 5. Reglas: Tiempos por Código Plazo ── */}
+        {/* ── 5. Tiempos por Código Plazo ── */}
         <section>
           <SectionTitle count={leadTimes.length}>Tiempos por Código Plazo</SectionTitle>
           <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5">

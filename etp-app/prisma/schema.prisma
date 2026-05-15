@@ -28,12 +28,10 @@ model SalesPlanning {
   modelo                String?
   vin                   String?
   llegada               DateTime?
-  entrega               DateTime?
   venta                 String?
   color_eq              String?
   oc                    String?
   factura               String?
-  proximo_a_entrega     Boolean   @default(false)
   cotizacion            Boolean   @default(false)
   correo                String?
   patente               String?
@@ -42,21 +40,42 @@ model SalesPlanning {
   color_cabina          String?
   atraso                Int?
   prioridad             Int?      @default(5)
+  planning_buffer_days  Int?
+  planning_buffer_note  String?
+  planning_buffer_at    DateTime?
   created_at            DateTime  @default(now())
   updated_at            DateTime  @updatedAt
   created_by            String?
   updated_by            String?
 
-  optimized         SalesPlanningOptimized[]
-  process_schedules OptimizedProcessSchedule[]
+  optimized          SalesPlanningOptimized[]
+  process_schedules  OptimizedProcessSchedule[]
+  buffer_adjustments PlanningBufferAdjustment[]
 
   @@map("sales_planning")
+}
+
+model PlanningRun {
+  id         String   @id @default(cuid())
+  version    Int      @default(1)
+  status     String   @default("ACTIVE")
+  created_at DateTime @default(now())
+  created_by String?
+  notes      String?
+
+  optimized         SalesPlanningOptimized[]
+  process_schedules OptimizedProcessSchedule[]
+  special_days      SpecialWorkingDay[]
+
+  @@map("planning_run")
 }
 
 model SalesPlanningOptimized {
   id                String         @id @default(cuid())
   sales_planning_id String?
+  planning_run_id   String?
   sales_planning    SalesPlanning? @relation(fields: [sales_planning_id], references: [id], onDelete: SetNull)
+  planning_run      PlanningRun?   @relation(fields: [planning_run_id], references: [id], onDelete: SetNull)
   position          Int            @default(0)
   start_date        DateTime?
   end_date          DateTime?
@@ -95,13 +114,42 @@ model ProcessCapacity {
 model OptimizedProcessSchedule {
   id                String        @id @default(cuid())
   sales_planning_id String
+  planning_run_id   String?
   proceso           String
   orden             Int
+  slot              Int           @default(1)
   start_date        DateTime
   end_date          DateTime
   duration_days     Int
   created_at        DateTime      @default(now())
   sales_planning    SalesPlanning @relation(fields: [sales_planning_id], references: [id], onDelete: Cascade)
+  planning_run      PlanningRun?  @relation(fields: [planning_run_id], references: [id], onDelete: SetNull)
 
   @@map("optimized_process_schedule")
+}
+
+model PlanningBufferAdjustment {
+  id                String        @id @default(cuid())
+  sales_planning_id String
+  buffer_days       Int
+  note              String?
+  created_at        DateTime      @default(now())
+  created_by        String?
+  sales_planning    SalesPlanning @relation(fields: [sales_planning_id], references: [id], onDelete: Cascade)
+
+  @@map("planning_buffer_adjustment")
+}
+
+model SpecialWorkingDay {
+  id               String       @id @default(cuid())
+  date             DateTime
+  type             String       @default("WEEKEND_WORKING")
+  description      String?
+  created_at       DateTime     @default(now())
+  created_by       String?
+  planning_run_id  String?
+  used_in_planning Boolean      @default(false)
+  planning_run     PlanningRun? @relation(fields: [planning_run_id], references: [id], onDelete: SetNull)
+
+  @@map("special_working_day")
 }

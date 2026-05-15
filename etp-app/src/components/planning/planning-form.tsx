@@ -29,13 +29,14 @@ function n2u<T>(v: T | null | undefined): T | undefined {
   return v === null ? undefined : v;
 }
 
-// Required fields (marked with *)
-const REQUIRED = new Set(["codigo_plazo", "llegada", "prioridad", "atraso"]);
+// Required fields for planning (marked with *)
+const REQUIRED = new Set(["codigo_plazo", "prioridad", "atraso"]);
 
 const textFields: {
   name: keyof SalesPlanningFormInput;
   label: string;
   type?: string;
+  hint?: string;
 }[] = [
   { name: "ot", label: "OT" },
   { name: "clte_interno", label: "Cliente Interno" },
@@ -46,8 +47,7 @@ const textFields: {
   { name: "camion", label: "Camión" },
   { name: "modelo", label: "Modelo" },
   { name: "vin", label: "VIN" },
-  { name: "llegada", label: "Llegada", type: "date" },
-  { name: "entrega", label: "Entrega", type: "date" },
+  { name: "llegada", label: "Llegada", type: "date", hint: "Sin fecha → excluido de planificación" },
   { name: "venta", label: "Venta" },
   { name: "color_eq", label: "Color Equipo" },
   { name: "oc", label: "OC" },
@@ -62,7 +62,6 @@ const textFields: {
 ];
 
 const checkboxFields: { name: keyof SalesPlanningFormInput; label: string }[] = [
-  { name: "proximo_a_entrega", label: "Próx. Entrega" },
   { name: "cotizacion", label: "Cotización" },
 ];
 
@@ -88,12 +87,10 @@ export function PlanningForm({ record, onSuccess }: PlanningFormProps) {
           modelo: n2u(record.modelo),
           vin: n2u(record.vin),
           llegada: formatDate(record.llegada) || undefined,
-          entrega: formatDate(record.entrega) || undefined,
           venta: n2u(record.venta),
           color_eq: n2u(record.color_eq),
           oc: n2u(record.oc),
           factura: n2u(record.factura),
-          proximo_a_entrega: record.proximo_a_entrega ?? false,
           cotizacion: record.cotizacion ?? false,
           correo: n2u(record.correo),
           patente: n2u(record.patente),
@@ -106,7 +103,6 @@ export function PlanningForm({ record, onSuccess }: PlanningFormProps) {
       : {
           prioridad: 5,
           atraso: 0,
-          proximo_a_entrega: false,
           cotizacion: false,
         },
   });
@@ -135,7 +131,7 @@ export function PlanningForm({ record, onSuccess }: PlanningFormProps) {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {textFields.map(({ name, label, type }) => {
+        {textFields.map(({ name, label, type, hint }) => {
           const required = REQUIRED.has(name);
           return (
             <div key={name} className="space-y-1">
@@ -154,6 +150,9 @@ export function PlanningForm({ record, onSuccess }: PlanningFormProps) {
                   required ? "border-zinc-600" : ""
                 }`}
               />
+              {hint && !errors[name] && (
+                <p className="text-xs text-zinc-600">{hint}</p>
+              )}
               {errors[name] && (
                 <p className="text-xs text-red-400">
                   {String(errors[name]?.message)}

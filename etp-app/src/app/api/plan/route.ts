@@ -40,8 +40,22 @@ export async function GET() {
     return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 
   const { prisma } = await import("@/lib/prisma");
-  const count = await prisma.salesPlanningOptimized.count({
-    where: { start_date: { not: null } },
+
+  const [activeRun, previousRun] = await Promise.all([
+    prisma.planningRun.findFirst({ where: { status: "ACTIVE" } }),
+    prisma.planningRun.findFirst({ where: { status: "PREVIOUS" } }),
+  ]);
+
+  const count = activeRun
+    ? await prisma.salesPlanningOptimized.count({
+        where: { planning_run_id: activeRun.id, start_date: { not: null } },
+      })
+    : 0;
+
+  return NextResponse.json({
+    planned: count > 0,
+    count,
+    hasPrevious: previousRun != null,
+    activeRunId: activeRun?.id ?? null,
   });
-  return NextResponse.json({ planned: count > 0, count });
 }

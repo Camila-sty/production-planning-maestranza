@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { deleteRecord } from "@/actions/sales-planning";
+import { deleteRecord, upsertBuffer } from "@/actions/sales-planning";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -14,7 +15,7 @@ import {
 import { PlanningForm } from "./planning-form";
 import { toast } from "sonner";
 import type { SalesPlanning } from "@/types";
-import { Pencil, Trash2, Search } from "lucide-react";
+import { Pencil, Trash2, Search, Timer } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { priorityBadgeClass } from "@/lib/priority";
 
@@ -24,10 +25,12 @@ interface PlanningTableProps {
 
 export function PlanningTable({ records }: PlanningTableProps) {
   const [search, setSearch] = useState("");
-  const [editingRecord, setEditingRecord] = useState<SalesPlanning | null>(
-    null
-  );
+  const [editingRecord, setEditingRecord] = useState<SalesPlanning | null>(null);
+  const [bufferRecord, setBufferRecord] = useState<SalesPlanning | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [bufferDays, setBufferDays] = useState("");
+  const [bufferNote, setBufferNote] = useState("");
+  const [savingBuffer, setSavingBuffer] = useState(false);
 
   const filtered = records.filter((r) => {
     const q = search.toLowerCase();
@@ -57,9 +60,39 @@ export function PlanningTable({ records }: PlanningTableProps) {
     }
   }
 
+  function openBuffer(r: SalesPlanning) {
+    setBufferRecord(r);
+    setBufferDays(r.planning_buffer_days != null ? String(r.planning_buffer_days) : "0");
+    setBufferNote(r.planning_buffer_note ?? "");
+  }
+
+  async function handleSaveBuffer() {
+    if (!bufferRecord) return;
+    const days = parseInt(bufferDays, 10);
+    if (isNaN(days)) {
+      toast.error("Ingresa un número válido de días");
+      return;
+    }
+    setSavingBuffer(true);
+    try {
+      const result = await upsertBuffer(bufferRecord.id, {
+        buffer_days: days,
+        note: bufferNote || undefined,
+      });
+      if (result.error) {
+        toast.error(typeof result.error === "string" ? result.error : "Error al guardar");
+      } else {
+        toast.success("Buffer guardado");
+        setBufferRecord(null);
+      }
+    } finally {
+      setSavingBuffer(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
-      {/* Edit dialog — rendered once at component level */}
+      {/* Edit dialog */}
       <Dialog
         open={editingRecord !== null}
         onOpenChange={(open) => !open && setEditingRecord(null)}
@@ -76,6 +109,66 @@ export function PlanningTable({ records }: PlanningTableProps) {
               onSuccess={() => setEditingRecord(null)}
             />
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Buffer dialog */}
+      <Dialog
+        open={bufferRecord !== null}
+        onOpenChange={(open) => !open && setBufferRecord(null)}
+      >
+        <DialogContent className="max-w-sm bg-zinc-900 border-zinc-800 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white">
+              Buffer de planificación — OT {bufferRecord?.ot ?? ""}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <p className="text-xs text-zinc-500">
+              Ajuste manual en días hábiles. Positivo = atraso, negativo = adelanto.
+              Se aplica solo si se guarda <span className="text-amber-400">después</span> de la última planificación activa.
+            </p>
+            <div className="space-y-1">
+              <Label className="text-xs text-zinc-400 uppercase tracking-wide">
+                Buffer (días)
+              </Label>
+              <Input
+                type="number"
+                value={bufferDays}
+                onChange={(e) => setBufferDays(e.target.value)}
+                className="bg-zinc-800/50 border-zinc-700 text-white h-8 text-sm"
+                placeholder="0"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-zinc-400 uppercase tracking-wide">
+                Nota (opcional)
+              </Label>
+              <Input
+                type="text"
+                value={bufferNote}
+                onChange={(e) => setBufferNote(e.target.value)}
+                className="bg-zinc-800/50 border-zinc-700 text-white h-8 text-sm"
+                placeholder="Motivo del ajuste"
+              />
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button
+                onClick={handleSaveBuffer}
+                disabled={savingBuffer}
+                className="bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold"
+              >
+                {savingBuffer ? "Guardando..." : "Guardar Buffer"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setBufferRecord(null)}
+                className="border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-800"
+              >
+                Cancelar
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -104,8 +197,8 @@ export function PlanningTable({ records }: PlanningTableProps) {
                 "Equipo",
                 "VIN",
                 "Llegada",
-                "Entrega",
                 "Prioridad",
+                "Buffer",
                 "Estado",
                 "Creado por",
                 "Acciones",
@@ -149,10 +242,9 @@ export function PlanningTable({ records }: PlanningTableProps) {
                   {r.vin || "—"}
                 </td>
                 <td className="px-3 py-2.5 text-zinc-400 whitespace-nowrap">
-                  {fmtDate(r.llegada)}
-                </td>
-                <td className="px-3 py-2.5 text-zinc-400 whitespace-nowrap">
-                  {fmtDate(r.entrega)}
+                  {r.llegada ? fmtDate(r.llegada) : (
+                    <span className="text-zinc-600 italic text-xs">Sin fecha</span>
+                  )}
                 </td>
                 <td className="px-3 py-2.5">
                   {r.prioridad != null ? (
@@ -167,37 +259,32 @@ export function PlanningTable({ records }: PlanningTableProps) {
                   )}
                 </td>
                 <td className="px-3 py-2.5">
+                  {r.planning_buffer_days != null ? (
+                    <span className={`text-xs font-mono ${
+                      r.planning_buffer_days > 0
+                        ? "text-red-400"
+                        : r.planning_buffer_days < 0
+                        ? "text-green-400"
+                        : "text-zinc-500"
+                    }`}>
+                      {r.planning_buffer_days > 0 ? "+" : ""}{r.planning_buffer_days}d
+                    </span>
+                  ) : (
+                    <span className="text-zinc-700 text-xs">—</span>
+                  )}
+                </td>
+                <td className="px-3 py-2.5">
                   <div className="flex gap-1 flex-wrap">
-                    {/*
-                     * Estado: Próx. entrega
-                     * Campo booleano manual (proximo_a_entrega).
-                     * Se marca en el formulario cuando el equipo tiene entrega próxima.
-                     * No se calcula automáticamente.
-                     */}
-                    {r.proximo_a_entrega && (
-                      <Badge className="text-xs bg-amber-500/20 text-amber-400 border-0">
-                        Próx. entrega
+                    {!r.llegada && (
+                      <Badge className="text-xs bg-zinc-700/50 text-zinc-400 border-0">
+                        Sin llegada
                       </Badge>
                     )}
-                    {/*
-                     * Estado: Cotización
-                     * Campo booleano manual (cotizacion).
-                     * Indica que el equipo está en etapa de cotización, no confirmado.
-                     */}
                     {r.cotizacion && (
                       <Badge className="text-xs bg-blue-500/20 text-blue-400 border-0">
                         Cotización
                       </Badge>
                     )}
-                    {/*
-                     * Estado: Atraso
-                     * Campo numérico manual (atraso, en días).
-                     * Representa un buffer de atraso conocido — NO es un cálculo automático
-                     * comparando fecha planificada vs fecha de entrega.
-                     * El CP-SAT usa este valor para ampliar el plazo objetivo del equipo:
-                     *   due_day = llegada + duracion_total + atraso
-                     * Se muestra el badge cuando atraso > 0.
-                     */}
                     {r.atraso != null && r.atraso > 0 && (
                       <Badge className="text-xs bg-red-500/20 text-red-400 border-0">
                         Atraso
@@ -215,8 +302,18 @@ export function PlanningTable({ records }: PlanningTableProps) {
                       variant="ghost"
                       onClick={() => setEditingRecord(r)}
                       className="w-7 h-7 text-zinc-400 hover:text-white hover:bg-zinc-700"
+                      title="Editar"
                     >
                       <Pencil className="w-3.5 h-3.5" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => openBuffer(r)}
+                      className="w-7 h-7 text-zinc-500 hover:text-amber-400 hover:bg-amber-950/30"
+                      title="Ajustar buffer"
+                    >
+                      <Timer className="w-3.5 h-3.5" />
                     </Button>
                     <Button
                       size="icon"
@@ -224,6 +321,7 @@ export function PlanningTable({ records }: PlanningTableProps) {
                       onClick={() => handleDelete(r.id)}
                       disabled={deletingId === r.id}
                       className="w-7 h-7 text-zinc-600 hover:text-red-400 hover:bg-red-950/30"
+                      title="Eliminar"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </Button>
