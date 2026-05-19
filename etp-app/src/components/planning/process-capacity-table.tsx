@@ -85,19 +85,37 @@ export function ProcessCapacityTable({ records }: Props) {
     <div className="space-y-3">
       {/* Confirm delete dialog */}
       <Dialog open={confirmDelete !== null} onOpenChange={() => setConfirmDelete(null)}>
-        <DialogContent className="max-w-sm bg-zinc-900 border-zinc-800 text-white">
+        <DialogContent className="w-[90vw] max-w-[640px] bg-zinc-900 border-zinc-800 text-white max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Confirmar eliminación</DialogTitle>
+            <DialogTitle className="text-white">Confirmar eliminación</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-zinc-400">
-            ¿Eliminar el proceso <span className="text-white font-medium">{confirmDelete?.proceso}</span>?
-          </p>
-          <div className="flex gap-2 justify-end pt-2">
-            <Button variant="outline" size="sm" className="border-zinc-700 text-zinc-400" onClick={() => setConfirmDelete(null)}>
-              Cancelar
-            </Button>
-            <Button size="sm" className="bg-red-600 hover:bg-red-500 text-white" disabled={loading} onClick={() => confirmDelete && handleDelete(confirmDelete)}>
+          <div className="pt-1">
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
+                Proceso a eliminar
+              </span>
+              <div className="flex-1 h-px bg-zinc-800" />
+            </div>
+            <p className="text-sm text-zinc-400">
+              ¿Eliminar el proceso{" "}
+              <span className="text-white font-medium">{confirmDelete?.proceso}</span>?
+              Esta acción no se puede deshacer.
+            </p>
+          </div>
+          <div className="flex gap-2 pt-2 items-center border-t border-zinc-800">
+            <Button
+              className="bg-red-600 hover:bg-red-500 text-white font-semibold px-6"
+              disabled={loading}
+              onClick={() => confirmDelete && handleDelete(confirmDelete)}
+            >
               Eliminar
+            </Button>
+            <Button
+              variant="outline"
+              className="border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-800"
+              onClick={() => setConfirmDelete(null)}
+            >
+              Cancelar
             </Button>
           </div>
         </DialogContent>
@@ -105,32 +123,59 @@ export function ProcessCapacityTable({ records }: Props) {
 
       {/* Add/Edit dialog */}
       <Dialog open={isOpen} onOpenChange={(o) => { if (!o) { setEditing(null); setAdding(false); } }}>
-        <DialogContent className="max-w-sm bg-zinc-900 border-zinc-800 text-white">
+        <DialogContent className="w-[90vw] max-w-[640px] bg-zinc-900 border-zinc-800 text-white max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editing ? "Editar proceso" : "Nuevo proceso"}</DialogTitle>
+            <DialogTitle className="text-white">
+              {editing ? "Editar proceso" : "Nuevo proceso"}
+            </DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            {[
-              { key: "proceso", label: "Proceso", type: "text" },
-              { key: "orden", label: "Orden", type: "number" },
-              { key: "capacidad_por_dia", label: "Capacidad / día", type: "number" },
-            ].map(({ key, label, type }) => (
-              <div key={key} className="space-y-1">
-                <Label className="text-xs text-zinc-400 uppercase tracking-wide">{label}</Label>
+
+          <div className="pt-2">
+            <div className="flex items-center gap-3 mb-3">
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500 whitespace-nowrap">
+                Información del proceso
+              </span>
+              <div className="flex-1 h-px bg-zinc-800" />
+            </div>
+
+            <div className="grid items-center gap-x-6 gap-y-2" style={{ gridTemplateColumns: "160px 1fr" }}>
+              {[
+                { key: "proceso", label: "Proceso", type: "text" },
+                { key: "orden", label: "Orden", type: "number" },
+                { key: "capacidad_por_dia", label: "Capacidad / Día", type: "number" },
+              ].map(({ key, label, type }) => [
+                <Label key={`l-${key}`} className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide">
+                  {label}
+                </Label>,
                 <Input
+                  key={`f-${key}`}
                   type={type}
                   value={String(form[key as keyof typeof form])}
-                  onChange={(e) => setForm((f) => ({ ...f, [key]: type === "number" ? Number(e.target.value) : e.target.value }))}
-                  className="bg-zinc-800/50 border-zinc-700 text-white h-8 text-sm focus:border-amber-500"
-                />
-              </div>
-            ))}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      [key]: type === "number" ? Number(e.target.value) : e.target.value,
+                    }))
+                  }
+                  className="etp-modal-input"
+                />,
+              ])}
+            </div>
           </div>
-          <div className="flex gap-2 pt-2">
-            <Button size="sm" disabled={loading} onClick={handleSave} className="bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold">
+
+          <div className="flex gap-2 pt-3 items-center border-t border-zinc-800">
+            <Button
+              disabled={loading}
+              onClick={handleSave}
+              className="bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold px-6"
+            >
               {loading ? "Guardando..." : "Guardar"}
             </Button>
-            <Button size="sm" variant="outline" className="border-zinc-700 text-zinc-400" onClick={() => { setEditing(null); setAdding(false); }}>
+            <Button
+              variant="outline"
+              className="border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-800"
+              onClick={() => { setEditing(null); setAdding(false); }}
+            >
               Cancelar
             </Button>
           </div>

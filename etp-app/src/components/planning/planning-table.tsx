@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { deleteRecord, upsertBuffer } from "@/actions/sales-planning";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { PlanningForm } from "./planning-form";
+import { PlanningEditForm } from "./planning-form";
 import { toast } from "sonner";
 import type { SalesPlanning, PlanRunHistoryEntry } from "@/types";
 import { Pencil, Trash2, Search, Timer } from "lucide-react";
@@ -59,15 +60,21 @@ function HistoryTooltip({ history }: { history: PlanRunHistoryEntry[] }) {
 }
 
 export function PlanningTable({ records, endDateMap, historyMap }: PlanningTableProps) {
+  const router = useRouter();
+  const [localRecords, setLocalRecords] = useState(records);
   const [search, setSearch] = useState("");
   const [editingRecord, setEditingRecord] = useState<SalesPlanning | null>(null);
   const [bufferRecord, setBufferRecord] = useState<SalesPlanning | null>(null);
+  const [confirmDeleteRecord, setConfirmDeleteRecord] = useState<SalesPlanning | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [bufferDays, setBufferDays] = useState("");
   const [bufferNote, setBufferNote] = useState("");
   const [savingBuffer, setSavingBuffer] = useState(false);
 
-  const filtered = records.filter((r) => {
+  // Keep local copy in sync when the server refreshes the records prop
+  useEffect(() => { setLocalRecords(records); }, [records]);
+
+  const filtered = localRecords.filter((r) => {
     const q = search.toLowerCase();
     return (
       !q ||
@@ -80,15 +87,15 @@ export function PlanningTable({ records, endDateMap, historyMap }: PlanningTable
     );
   });
 
-  async function handleDelete(id: string) {
-    if (!confirm("¿Eliminar este registro?")) return;
-    setDeletingId(id);
+  async function handleDelete(record: SalesPlanning) {
+    setDeletingId(record.id);
     try {
-      const result = await deleteRecord(id);
+      const result = await deleteRecord(record.id);
       if (result.error) toast.error(result.error);
       else toast.success("Registro eliminado");
     } finally {
       setDeletingId(null);
+      setConfirmDeleteRecord(null);
     }
   }
 
@@ -109,7 +116,19 @@ export function PlanningTable({ records, endDateMap, historyMap }: PlanningTable
         note: bufferNote || undefined,
       });
       if (result.error) toast.error(typeof result.error === "string" ? result.error : "Error al guardar");
-      else { toast.success("Buffer guardado"); setBufferRecord(null); }
+      else {
+        // Optimistic update: patch the record locally so the table reflects it immediately
+        setLocalRecords((prev) =>
+          prev.map((r) =>
+            r.id === bufferRecord.id
+              ? { ...r, planning_buffer_days: days, planning_buffer_note: bufferNote || null, planning_buffer_at: new Date() }
+              : r
+          )
+        );
+        toast.success("Buffer guardado");
+        setBufferRecord(null);
+        router.refresh(); // sync server state in background
+      }
     } finally {
       setSavingBuffer(false);
     }
@@ -121,53 +140,95 @@ export function PlanningTable({ records, endDateMap, historyMap }: PlanningTable
     <div className="space-y-4">
       {/* Edit dialog */}
       <Dialog open={editingRecord !== null} onOpenChange={(open) => !open && setEditingRecord(null)}>
-        <DialogContent className="max-w-5xl bg-zinc-900 border-zinc-800 text-white max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[90vw] max-w-[640px] bg-zinc-900 border-zinc-800 text-white max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-white">Editar Registro — OT {editingRecord?.ot ?? ""}</DialogTitle>
           </DialogHeader>
-          {editingRecord && <PlanningForm record={editingRecord} onSuccess={() => setEditingRecord(null)} />}
+          {editingRecord && <PlanningEditForm record={editingRecord} onSuccess={() => setEditingRecord(null)} />}
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm delete dialog */}
+      <Dialog open={confirmDeleteRecord !== null} onOpenChange={(open) => !open && setConfirmDeleteRecord(null)}>
+        <DialogContent className="w-[90vw] max-w-[640px] bg-zinc-900 border-zinc-800 text-white max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-white">Confirmar eliminación</DialogTitle>
+          </DialogHeader>
+          <div className="pt-1">
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500 whitespace-nowrap">Registro a eliminar</span>
+              <div className="flex-1 h-px bg-zinc-800" />
+            </div>
+            <p className="text-sm text-zinc-400">
+              ¿Eliminar el registro{" "}
+              <span className="text-amber-400 font-mono font-semibold">OT {confirmDeleteRecord?.ot ?? "—"}</span>
+              {confirmDeleteRecord?.cliente ? (
+                <> — <span className="text-white font-medium">{confirmDeleteRecord.cliente}</span></>
+              ) : null}
+              ? Esta acción no se puede deshacer.
+            </p>
+          </div>
+          <div className="flex gap-2 pt-3 items-center border-t border-zinc-800">
+            <Button
+              className="bg-red-600 hover:bg-red-500 text-white font-semibold px-6"
+              disabled={deletingId === confirmDeleteRecord?.id}
+              onClick={() => confirmDeleteRecord && handleDelete(confirmDeleteRecord)}
+            >
+              {deletingId === confirmDeleteRecord?.id ? "Eliminando..." : "Eliminar"}
+            </Button>
+            <Button
+              variant="outline"
+              className="border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-800"
+              onClick={() => setConfirmDeleteRecord(null)}
+            >
+              Cancelar
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
       {/* Buffer dialog */}
       <Dialog open={bufferRecord !== null} onOpenChange={(open) => !open && setBufferRecord(null)}>
-        <DialogContent className="max-w-sm bg-zinc-900 border-zinc-800 text-white">
+        <DialogContent className="w-[90vw] max-w-[640px] bg-zinc-900 border-zinc-800 text-white max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-white">Buffer de planificación — OT {bufferRecord?.ot ?? ""}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 pt-2">
-            <p className="text-xs text-zinc-500">
-              Ajuste manual en días hábiles. Positivo = atraso, negativo = adelanto.
-              Se aplica solo si se guarda <span className="text-amber-400">después</span> de la última planificación activa.
+          <div className="pt-2">
+            <div className="flex items-center gap-3 mb-3">
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500 whitespace-nowrap">Ajuste manual</span>
+              <div className="flex-1 h-px bg-zinc-800" />
+            </div>
+            <p className="text-[11px] text-zinc-500 leading-relaxed mb-4">
+              <span className="text-red-400">Negativo = atrasado</span>,{" "}
+              <span className="text-green-400">positivo = adelantado</span>.
+              Se aplica en la próxima ejecución del planificador.
             </p>
-            <div className="space-y-1">
-              <Label className="text-xs text-zinc-400 uppercase tracking-wide">Buffer (días)</Label>
+            <div className="grid items-center gap-x-6 gap-y-2" style={{ gridTemplateColumns: "160px 1fr" }}>
+              <Label className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide">Buffer (días)</Label>
               <Input
                 type="number"
                 value={bufferDays}
                 onChange={(e) => setBufferDays(e.target.value)}
-                className="bg-zinc-800/50 border-zinc-700 text-white h-8 text-sm"
+                className="etp-modal-input"
                 placeholder="0"
               />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-zinc-400 uppercase tracking-wide">Nota (opcional)</Label>
+              <Label className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide">Nota (opcional)</Label>
               <Input
                 type="text"
                 value={bufferNote}
                 onChange={(e) => setBufferNote(e.target.value)}
-                className="bg-zinc-800/50 border-zinc-700 text-white h-8 text-sm"
+                className="etp-modal-input"
                 placeholder="Motivo del ajuste"
               />
             </div>
-            <div className="flex gap-2 pt-1">
-              <Button onClick={handleSaveBuffer} disabled={savingBuffer} className="bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold">
-                {savingBuffer ? "Guardando..." : "Guardar Buffer"}
-              </Button>
-              <Button variant="outline" onClick={() => setBufferRecord(null)} className="border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-800">
-                Cancelar
-              </Button>
-            </div>
+          </div>
+          <div className="flex gap-2 pt-3 items-center border-t border-zinc-800">
+            <Button onClick={handleSaveBuffer} disabled={savingBuffer} className="bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold px-6">
+              {savingBuffer ? "Guardando..." : "Guardar Buffer"}
+            </Button>
+            <Button variant="outline" onClick={() => setBufferRecord(null)} className="border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-800">
+              Cancelar
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -247,8 +308,8 @@ export function PlanningTable({ records, endDateMap, historyMap }: PlanningTable
                   <td className="px-3 py-2.5">
                     {r.planning_buffer_days != null ? (
                       <span className={`text-xs font-mono ${
-                        r.planning_buffer_days > 0 ? "text-red-400" :
-                        r.planning_buffer_days < 0 ? "text-green-400" :
+                        r.planning_buffer_days < 0 ? "text-red-400" :
+                        r.planning_buffer_days > 0 ? "text-green-400" :
                         "text-zinc-500"
                       }`}>
                         {r.planning_buffer_days > 0 ? "+" : ""}{r.planning_buffer_days}d
@@ -298,7 +359,7 @@ export function PlanningTable({ records, endDateMap, historyMap }: PlanningTable
                         className="w-7 h-7 text-zinc-500 hover:text-amber-400 hover:bg-amber-950/30" title="Ajustar buffer">
                         <Timer className="w-3.5 h-3.5" />
                       </Button>
-                      <Button size="icon" variant="ghost" onClick={() => handleDelete(r.id)}
+                      <Button size="icon" variant="ghost" onClick={() => setConfirmDeleteRecord(r)}
                         disabled={deletingId === r.id}
                         className="w-7 h-7 text-zinc-600 hover:text-red-400 hover:bg-red-950/30" title="Eliminar">
                         <Trash2 className="w-3.5 h-3.5" />

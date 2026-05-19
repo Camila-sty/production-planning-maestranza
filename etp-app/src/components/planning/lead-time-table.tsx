@@ -193,50 +193,59 @@ export function LeadTimeTable({ records, processes }: Props) {
 
       {/* Cell edit dialog */}
       <Dialog open={cellDialog !== null} onOpenChange={(o) => !o && setCellDialog(null)}>
-        <DialogContent className="max-w-sm bg-zinc-900 border-zinc-800 text-white">
+        <DialogContent className="w-[90vw] max-w-[640px] bg-zinc-900 border-zinc-800 text-white max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-sm">
-              <span className="text-amber-400">
-                {cellDialog?.codigo_plazo}
-              </span>{" "}
-              / {cellDialog?.proceso}
+            <DialogTitle className="text-white">
+              Editar lead time —{" "}
+              <span className="text-amber-400">{cellDialog?.codigo_plazo}</span>
+              {" / "}
+              {cellDialog?.proceso}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label className="text-xs text-zinc-400 uppercase tracking-wide">
+
+          <div className="pt-2">
+            <div className="flex items-center gap-3 mb-3">
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500 whitespace-nowrap">
+                Duración del proceso
+              </span>
+              <div className="flex-1 h-px bg-zinc-800" />
+            </div>
+
+            <div className="grid items-center gap-x-6 gap-y-2" style={{ gridTemplateColumns: "160px 1fr" }}>
+              <Label className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide">
                 Duración (días hábiles)
               </Label>
-              <Input
-                type="number"
-                min={0}
-                value={cellDialog?.duracion_dias ?? 0}
-                onChange={(e) =>
-                  setCellDialog((f) =>
-                    f ? { ...f, duracion_dias: Number(e.target.value) } : f
-                  )
-                }
-                className="bg-zinc-800/50 border-zinc-700 text-white h-8 text-sm focus:border-amber-500"
-                autoFocus
-              />
+              <div>
+                <Input
+                  type="number"
+                  min={0}
+                  value={cellDialog?.duracion_dias ?? 0}
+                  onChange={(e) =>
+                    setCellDialog((f) =>
+                      f ? { ...f, duracion_dias: Number(e.target.value) } : f
+                    )
+                  }
+                  className="etp-modal-input"
+                  autoFocus
+                />
+                <p className="text-[11px] text-zinc-600 leading-tight mt-1">
+                  0 = proceso no aplica para este equipo (ignorado por el planificador)
+                </p>
+              </div>
             </div>
-            <p className="text-xs text-zinc-600">
-              0 = proceso no aplica para este equipo (ignorado por el planificador)
-            </p>
           </div>
-          <div className="flex gap-2 pt-1">
+
+          <div className="flex gap-2 pt-3 items-center border-t border-zinc-800">
             <Button
-              size="sm"
               disabled={loading}
               onClick={handleCellSave}
-              className="bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold"
+              className="bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold px-6"
             >
               {loading ? "Guardando…" : "Guardar"}
             </Button>
             <Button
-              size="sm"
               variant="outline"
-              className="border-zinc-700 text-zinc-400"
+              className="border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-800"
               onClick={() => setCellDialog(null)}
             >
               Cancelar
@@ -247,44 +256,54 @@ export function LeadTimeTable({ records, processes }: Props) {
 
       {/* New equipment dialog */}
       <Dialog open={equipDialog !== null} onOpenChange={(o) => !o && setEquipDialog(null)}>
-        <DialogContent className="max-w-sm bg-zinc-900 border-zinc-800 text-white">
+        <DialogContent className="w-[90vw] max-w-[640px] bg-zinc-900 border-zinc-800 text-white max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Nuevo tipo de equipo</DialogTitle>
+            <DialogTitle className="text-white">Nuevo tipo de equipo</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            {[
-              { key: "codigo_plazo", label: "Código Plazo", type: "text" },
-              { key: "descripcion_equipo", label: "Descripción equipo", type: "text" },
-            ].map(({ key, label, type }) => (
-              <div key={key} className="space-y-1">
-                <Label className="text-xs text-zinc-400 uppercase tracking-wide">{label}</Label>
+
+          <div className="pt-2">
+            <div className="flex items-center gap-3 mb-3">
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500 whitespace-nowrap">
+                Identificación del equipo
+              </span>
+              <div className="flex-1 h-px bg-zinc-800" />
+            </div>
+
+            <div className="grid items-center gap-x-6 gap-y-2" style={{ gridTemplateColumns: "160px 1fr" }}>
+              {[
+                { key: "codigo_plazo", label: "Código Plazo", type: "text" },
+                { key: "descripcion_equipo", label: "Descripción equipo", type: "text" },
+              ].map(({ key, label, type }) => [
+                <Label key={`l-${key}`} className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide">
+                  {label}
+                </Label>,
                 <Input
+                  key={`f-${key}`}
                   type={type}
                   value={String(equipDialog?.[key as keyof EquipForm] ?? "")}
                   onChange={(e) =>
                     setEquipDialog((f) => f ? { ...f, [key]: e.target.value } : f)
                   }
-                  className="bg-zinc-800/50 border-zinc-700 text-white h-8 text-sm focus:border-amber-500"
-                />
-              </div>
-            ))}
-            <p className="text-xs text-zinc-600">
+                  className="etp-modal-input"
+                />,
+              ])}
+            </div>
+            <p className="text-[11px] text-zinc-600 leading-tight mt-4">
               Se crearán {orderedProcs.length} procesos con duración 0. Edita cada celda para asignar días.
             </p>
           </div>
-          <div className="flex gap-2 pt-1">
+
+          <div className="flex gap-2 pt-3 items-center border-t border-zinc-800">
             <Button
-              size="sm"
               disabled={loading}
               onClick={handleEquipSave}
-              className="bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold"
+              className="bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold px-6"
             >
               {loading ? "Creando…" : "Crear"}
             </Button>
             <Button
-              size="sm"
               variant="outline"
-              className="border-zinc-700 text-zinc-400"
+              className="border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-800"
               onClick={() => setEquipDialog(null)}
             >
               Cancelar
@@ -298,31 +317,41 @@ export function LeadTimeTable({ records, processes }: Props) {
         open={confirmDeleteRow !== null}
         onOpenChange={() => setConfirmDeleteRow(null)}
       >
-        <DialogContent className="max-w-sm bg-zinc-900 border-zinc-800 text-white">
-          <DialogHeader><DialogTitle>Confirmar eliminación</DialogTitle></DialogHeader>
-          <p className="text-sm text-zinc-400">
-            ¿Eliminar todos los procesos de{" "}
-            <span className="text-white font-medium">
-              {confirmDeleteRow?.codigo_plazo} — {confirmDeleteRow?.descripcion}
-            </span>
-            ? ({confirmDeleteRow?.byProc.size} registros)
-          </p>
-          <div className="flex gap-2 justify-end pt-2">
+        <DialogContent className="w-[90vw] max-w-[640px] bg-zinc-900 border-zinc-800 text-white max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-white">Confirmar eliminación</DialogTitle>
+          </DialogHeader>
+          <div className="pt-1">
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
+                Equipo a eliminar
+              </span>
+              <div className="flex-1 h-px bg-zinc-800" />
+            </div>
+            <p className="text-sm text-zinc-400">
+              ¿Eliminar todos los procesos de{" "}
+              <span className="text-white font-medium">
+                {confirmDeleteRow?.codigo_plazo} — {confirmDeleteRow?.descripcion}
+              </span>
+              ?{" "}
+              <span className="text-zinc-500">({confirmDeleteRow?.byProc.size} registros)</span>
+              {" "}Esta acción no se puede deshacer.
+            </p>
+          </div>
+          <div className="flex gap-2 pt-3 items-center border-t border-zinc-800">
             <Button
-              variant="outline"
-              size="sm"
-              className="border-zinc-700 text-zinc-400"
-              onClick={() => setConfirmDeleteRow(null)}
-            >
-              Cancelar
-            </Button>
-            <Button
-              size="sm"
-              className="bg-red-600 hover:bg-red-500 text-white"
+              className="bg-red-600 hover:bg-red-500 text-white font-semibold px-6"
               disabled={loading}
               onClick={() => confirmDeleteRow && handleDeleteRow(confirmDeleteRow)}
             >
               Eliminar
+            </Button>
+            <Button
+              variant="outline"
+              className="border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-800"
+              onClick={() => setConfirmDeleteRow(null)}
+            >
+              Cancelar
             </Button>
           </div>
         </DialogContent>

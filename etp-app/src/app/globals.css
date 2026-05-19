@@ -276,3 +276,46 @@ html.dark .bg-zinc-900\/20 { background-color: rgba(24, 24, 27, 0.45) !important
 html.dark .bg-amber-500\/20 { background-color: rgba(245, 158, 11, 0.22) !important; }
 html.dark .bg-blue-500\/20  { background-color: rgba(59,  130, 246, 0.22) !important; }
 html.dark .bg-red-500\/20   { background-color: rgba(239, 68,  68,  0.22) !important; }
+
+/* ======================================================================
+   ETP MODAL SYSTEM — unified input style for all edit modals
+   Used via className="etp-modal-input" on every Input inside a modal.
+   ====================================================================== */
+.etp-modal-input {
+  display: flex;
+  width: 100%;
+  height: 2.25rem;           /* h-9 */
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+  font-size: 0.875rem;       /* text-sm */
+  border-radius: 0.5rem;     /* rounded-lg */
+  border: 1px solid #52525b; /* zinc-600 */
+  background-color: rgba(255, 255, 255, 0.05);
+  color: #f4f4f5;            /* zinc-100 */
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.etp-modal-input::placeholder { color: #71717a; /* zinc-500 */ }
+.etp-modal-input:focus-visible,
+.etp-modal-input:focus {
+  border-color: #f59e0b !important; /* amber-500 */
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+/* Light mode — white background, stone border */
+html.light .etp-modal-input {
+  background-color: #ffffff !important;
+  border-color: #a8a29e !important; /* stone-400 */
+  color: #1c1917 !important;        /* stone-900 */
+}
+html.light .etp-modal-input::placeholder { color: #78716c !important; }
+html.light .etp-modal-input:focus-visible,
+html.light .etp-modal-input:focus { border-color: #d97706 !important; /* amber-600 */ }
+
+/* Dark mode — subtle translucent surface */
+html.dark .etp-modal-input {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  border-color: #52525b !important; /* zinc-600 */
+  color: #f4f4f5 !important;
+}
