@@ -13,7 +13,7 @@ import { logout } from "@/actions/auth";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ThemedToaster } from "@/components/themed-toaster";
-import type { SalesPlanning, LeadTimeByCode, ProcessCapacity, OptimizedResult, SpecialWorkingDay } from "@/types";
+import type { SalesPlanning, LeadTimeByCode, ProcessCapacity, OptimizedResult, SpecialWorkingDay, PlanRunHistoryEntry } from "@/types";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +27,7 @@ export default async function HomePage() {
     prisma.planningRun.findFirst({ where: { status: "PREVIOUS" } }),
   ]);
 
-  const [records, processCapacities, leadTimes, optimizedRaw, specialDays] = await Promise.all([
+  const [records, processCapacities, leadTimes, optimizedRaw, specialDays, allOptimized] = await Promise.all([
     prisma.salesPlanning.findMany({ orderBy: { created_at: "asc" } }),
     prisma.processCapacity.findMany({ orderBy: { orden: "asc" } }),
     prisma.leadTimeByCode.findMany({ orderBy: [{ codigo_plazo: "asc" }, { proceso: "asc" }] }),
@@ -43,10 +43,38 @@ export default async function HomePage() {
           include: { sales_planning: true },
         }),
     prisma.specialWorkingDay.findMany({ orderBy: { date: "asc" } }),
+    // All optimized records with run info — for entrega estimada + history tooltip
+    prisma.salesPlanningOptimized.findMany({
+      where: { start_date: { not: null } },
+      orderBy: { created_at: "asc" },
+      include: { planning_run: { select: { id: true, version: true, status: true, created_at: true } } },
+    }),
   ]);
 
   const hasResults = optimizedRaw.length > 0;
   const hasPrevious = previousRun != null;
+
+  // Build endDateMap: salesPlanningId → end_date from ACTIVE run
+  const endDateMap: Record<string, string> = {};
+  for (const o of optimizedRaw) {
+    if (o.sales_planning_id && o.end_date) {
+      endDateMap[o.sales_planning_id] = new Date(o.end_date).toISOString();
+    }
+  }
+
+  // Build historyMap: salesPlanningId → [{runDate, endDate, version}] sorted oldest→newest
+  const historyMap: Record<string, PlanRunHistoryEntry[]> = {};
+  for (const o of allOptimized) {
+    const sid = o.sales_planning_id;
+    if (!sid || !o.end_date || !o.planning_run) continue;
+    if (!historyMap[sid]) historyMap[sid] = [];
+    historyMap[sid].push({
+      version: o.planning_run.version,
+      runDate: new Date(o.planning_run.created_at).toISOString(),
+      endDate: new Date(o.end_date).toISOString(),
+      status: o.planning_run.status,
+    });
+  }
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
@@ -105,7 +133,11 @@ export default async function HomePage() {
             <SectionTitle count={records.length}>Historial de Planificación</SectionTitle>
           </div>
           <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5">
-            <PlanningTable records={records as unknown as SalesPlanning[]} />
+            <PlanningTable
+              records={records as unknown as SalesPlanning[]}
+              endDateMap={endDateMap}
+              historyMap={historyMap}
+            />
           </div>
         </section>
 

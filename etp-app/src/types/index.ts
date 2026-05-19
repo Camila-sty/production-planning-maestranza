@@ -72,6 +72,13 @@ export type PlanningRun = {
   notes: string | null;
 };
 
+export type PlanRunHistoryEntry = {
+  version: number;
+  runDate: string;   // ISO string
+  endDate: string;   // ISO string
+  status: string;    // ACTIVE | PREVIOUS | ARCHIVED
+};
+
 export type SpecialWorkingDay = {
   id: string;
   date: Date;
