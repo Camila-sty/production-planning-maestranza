@@ -325,6 +325,19 @@ function RegisterForm() {
   );
 }
 
+// ── Supabase error translation ────────────────────────────────────────────────
+
+function translateSupabaseError(message: string): string {
+  const msg = message.toLowerCase();
+  if (msg.includes("rate limit") || msg.includes("email rate limit") || msg.includes("too many requests")) {
+    return "Se alcanzó el límite temporal de envío de correos. Espera unos minutos antes de intentarlo nuevamente.";
+  }
+  if (msg.includes("already registered") || msg.includes("already exists") || msg.includes("user already")) {
+    return "Este correo ya está registrado.";
+  }
+  return message;
+}
+
 // ── Supabase auth panel (production) ─────────────────────────────────────────
 
 function SupabaseAuthPanel({ allowRegister }: { allowRegister: boolean }) {
@@ -372,12 +385,7 @@ function SupabaseAuthPanel({ allowRegister }: { allowRegister: boolean }) {
           options: { data: { name: name.trim() } },
         });
         if (error) {
-          const msg = error.message.toLowerCase();
-          if (msg.includes("already registered") || msg.includes("already exists") || msg.includes("user already")) {
-            setServerError("Este correo ya está registrado.");
-          } else {
-            setServerError(error.message);
-          }
+          setServerError(translateSupabaseError(error.message));
           return;
         }
         setSuccessMsg("Cuenta creada correctamente. Revisa tu correo para confirmar la cuenta.");
@@ -386,7 +394,7 @@ function SupabaseAuthPanel({ allowRegister }: { allowRegister: boolean }) {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
           redirectTo: `${window.location.origin}/auth/reset-password`,
         });
-        if (error) { setServerError(error.message); return; }
+        if (error) { setServerError(translateSupabaseError(error.message)); return; }
         setSuccessMsg("Revisa tu correo. Te enviamos un enlace para restablecer tu contraseña.");
       }
     } finally {
