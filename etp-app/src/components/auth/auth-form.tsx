@@ -329,31 +329,65 @@ function RegisterForm() {
 
 function SupabaseAuthPanel({ allowRegister }: { allowRegister: boolean }) {
   const [mode, setMode] = useState<"login" | "signup" | "forgot">("login");
-  const [email, setEmail] = useState("");
+  const [email, setEmail]       = useState("");
+  const [name, setName]         = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading]   = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg]   = useState<string | null>(null);
   const router = useRouter();
   const supabase = createClient();
 
+  function switchMode(next: "login" | "signup" | "forgot") {
+    setMode(next);
+    setServerError(null);
+    setSuccessMsg(null);
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setServerError(null);
+    setSuccessMsg(null);
+
+    if (mode === "signup" && !name.trim()) {
+      setServerError("El nombre de usuario es obligatorio.");
+      return;
+    }
+
     setLoading(true);
     try {
       if (mode === "login") {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) { toast.error(error.message); return; }
+        if (error) {
+          setServerError("Correo o contraseña incorrectos.");
+          return;
+        }
         router.push("/");
         router.refresh();
+
       } else if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({ email, password });
-        if (error) { toast.error(error.message); return; }
-        toast.success("Revisa tu correo para confirmar tu cuenta.");
-        setMode("login");
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { name: name.trim() } },
+        });
+        if (error) {
+          const msg = error.message.toLowerCase();
+          if (msg.includes("already registered") || msg.includes("already exists") || msg.includes("user already")) {
+            setServerError("Este correo ya está registrado.");
+          } else {
+            setServerError(error.message);
+          }
+          return;
+        }
+        setSuccessMsg("Cuenta creada correctamente. Revisa tu correo para confirmar la cuenta.");
+
       } else {
-        const { error } = await supabase.auth.resetPasswordForEmail(email);
-        if (error) { toast.error(error.message); return; }
-        toast.success("Revisa tu correo para restablecer tu contraseña.");
-        setMode("login");
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/auth/reset-password`,
+        });
+        if (error) { setServerError(error.message); return; }
+        setSuccessMsg("Revisa tu correo. Te enviamos un enlace para restablecer tu contraseña.");
       }
     } finally {
       setLoading(false);
@@ -379,7 +413,7 @@ function SupabaseAuthPanel({ allowRegister }: { allowRegister: boolean }) {
         {allowRegister && mode !== "forgot" && (
           <div className="flex gap-1 mb-8 bg-zinc-800/60 rounded-lg p-1 w-fit">
             <button
-              onClick={() => setMode("login")}
+              onClick={() => switchMode("login")}
               className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
                 mode === "login"
                   ? "bg-zinc-700 text-white shadow-sm"
@@ -389,7 +423,7 @@ function SupabaseAuthPanel({ allowRegister }: { allowRegister: boolean }) {
               Iniciar sesión
             </button>
             <button
-              onClick={() => setMode("signup")}
+              onClick={() => switchMode("signup")}
               className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
                 mode === "signup"
                   ? "bg-zinc-700 text-white shadow-sm"
@@ -401,74 +435,121 @@ function SupabaseAuthPanel({ allowRegister }: { allowRegister: boolean }) {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-5 max-w-sm">
-          <div className="space-y-1.5">
-            <Label htmlFor="supabase-email" className="text-zinc-300 text-sm">
-              Correo electrónico
-            </Label>
-            <Input
-              id="supabase-email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="usuario@empresa.cl"
-              required
-              className="bg-zinc-800/70 border-zinc-700 text-white placeholder:text-zinc-600 focus:border-amber-500 h-11"
-            />
+        {/* Success banner (signup / forgot) */}
+        {successMsg && (
+          <div className="mb-5 max-w-sm text-sm text-green-400 bg-green-950/40 border border-green-900/50 rounded-lg px-3 py-2.5">
+            {successMsg}
           </div>
+        )}
 
-          {mode !== "forgot" && (
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="supabase-password" className="text-zinc-300 text-sm">
-                  Contraseña
+        {!successMsg && (
+          <form onSubmit={handleSubmit} className="space-y-5 max-w-sm">
+            {/* Name — signup only */}
+            {mode === "signup" && (
+              <div className="space-y-1.5">
+                <Label htmlFor="supabase-name" className="text-zinc-300 text-sm">
+                  Nombre de usuario
                 </Label>
-                {mode === "login" && (
-                  <button
-                    type="button"
-                    onClick={() => setMode("forgot")}
-                    className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-                  >
-                    ¿Olvidaste tu contraseña?
-                  </button>
-                )}
+                <Input
+                  id="supabase-name"
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Tu nombre"
+                  autoComplete="name"
+                  className="bg-zinc-800/70 border-zinc-700 text-white placeholder:text-zinc-600 focus:border-amber-500 h-11"
+                />
               </div>
+            )}
+
+            {/* Email */}
+            <div className="space-y-1.5">
+              <Label htmlFor="supabase-email" className="text-zinc-300 text-sm">
+                Correo electrónico
+              </Label>
               <Input
-                id="supabase-password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
+                id="supabase-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="usuario@empresa.cl"
                 required
+                autoComplete="email"
                 className="bg-zinc-800/70 border-zinc-700 text-white placeholder:text-zinc-600 focus:border-amber-500 h-11"
               />
             </div>
-          )}
 
-          <Button
-            type="submit"
-            disabled={loading}
-            className="w-full h-11 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold text-sm"
-          >
-            {loading
-              ? "Cargando..."
-              : mode === "login"
-              ? "Ingresar"
-              : mode === "signup"
-              ? "Registrarse"
-              : "Enviar enlace de recuperación"}
-          </Button>
+            {/* Password — login and signup only */}
+            {mode !== "forgot" && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="supabase-password" className="text-zinc-300 text-sm">
+                    Contraseña
+                  </Label>
+                  {mode === "login" && (
+                    <button
+                      type="button"
+                      onClick={() => switchMode("forgot")}
+                      className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                    >
+                      ¿Olvidaste tu contraseña?
+                    </button>
+                  )}
+                </div>
+                <Input
+                  id="supabase-password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                  className="bg-zinc-800/70 border-zinc-700 text-white placeholder:text-zinc-600 focus:border-amber-500 h-11"
+                />
+              </div>
+            )}
 
-          {mode === "forgot" && (
-            <button
-              type="button"
-              onClick={() => setMode("login")}
-              className="w-full text-center text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+            {/* Inline error */}
+            {serverError && (
+              <p className="text-sm text-red-400 bg-red-950/40 border border-red-900/50 rounded-lg px-3 py-2">
+                {serverError}
+              </p>
+            )}
+
+            <Button
+              type="submit"
+              disabled={loading}
+              className="w-full h-11 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold text-sm"
             >
-              Volver al inicio de sesión
-            </button>
-          )}
-        </form>
+              {loading
+                ? "Cargando..."
+                : mode === "login"
+                ? "Ingresar"
+                : mode === "signup"
+                ? "Crear cuenta"
+                : "Enviar enlace de recuperación"}
+            </Button>
+
+            {mode === "forgot" && (
+              <button
+                type="button"
+                onClick={() => switchMode("login")}
+                className="w-full text-center text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                Volver al inicio de sesión
+              </button>
+            )}
+          </form>
+        )}
+
+        {successMsg && mode !== "login" && (
+          <button
+            onClick={() => switchMode("login")}
+            className="mt-4 text-sm text-amber-400 hover:text-amber-300 underline underline-offset-2"
+          >
+            Volver al inicio de sesión
+          </button>
+        )}
       </div>
 
       <p className="px-8 sm:px-12 xl:px-14 pb-8 text-xs text-zinc-700 text-center">
