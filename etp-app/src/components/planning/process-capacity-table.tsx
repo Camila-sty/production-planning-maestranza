@@ -21,6 +21,7 @@ import type { ProcessCapacity } from "@/types";
 
 interface Props {
   records: ProcessCapacity[];
+  isAdmin: boolean;
 }
 
 const EMPTY: Omit<ProcessCapacity, "id" | "created_at" | "updated_at"> = {
@@ -29,7 +30,7 @@ const EMPTY: Omit<ProcessCapacity, "id" | "created_at" | "updated_at"> = {
   capacidad_por_dia: 0,
 };
 
-export function ProcessCapacityTable({ records }: Props) {
+export function ProcessCapacityTable({ records, isAdmin }: Props) {
   const [editing, setEditing] = useState<ProcessCapacity | null>(null);
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState(EMPTY);
@@ -182,21 +183,24 @@ export function ProcessCapacityTable({ records }: Props) {
         </DialogContent>
       </Dialog>
 
-      <div className="flex justify-end">
-        <Button size="sm" onClick={openAdd} className="bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 h-7 text-xs gap-1">
-          <Plus className="w-3.5 h-3.5" /> Nuevo
-        </Button>
-      </div>
+      {isAdmin && (
+        <div className="flex justify-end">
+          <Button size="sm" onClick={openAdd} className="bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 h-7 text-xs gap-1">
+            <Plus className="w-3.5 h-3.5" /> Nuevo
+          </Button>
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-lg border border-zinc-800">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-zinc-800 bg-zinc-900/80">
-              {["Proceso", "Orden", "Cap./Día", ""].map((h) => (
+              {["Proceso", "Orden", "Cap./Día"].map((h) => (
                 <th key={h} className="text-left px-3 py-2 text-xs text-zinc-500 uppercase tracking-wider font-medium">
                   {h}
                 </th>
               ))}
+              {isAdmin && <th className="px-3 py-2" />}
             </tr>
           </thead>
           <tbody>
@@ -208,16 +212,18 @@ export function ProcessCapacityTable({ records }: Props) {
                 <td className="px-3 py-2 text-zinc-200 font-medium">{r.proceso}</td>
                 <td className="px-3 py-2 text-zinc-400 tabular-nums">{r.orden}</td>
                 <td className="px-3 py-2 text-amber-400 tabular-nums font-semibold">{r.capacidad_por_dia}</td>
-                <td className="px-3 py-2">
-                  <div className="flex gap-1 justify-end">
-                    <Button size="icon" variant="ghost" onClick={() => openEdit(r)} className="w-7 h-7 text-zinc-400 hover:text-white hover:bg-zinc-700">
-                      <Pencil className="w-3.5 h-3.5" />
-                    </Button>
-                    <Button size="icon" variant="ghost" onClick={() => setConfirmDelete(r)} className="w-7 h-7 text-zinc-600 hover:text-red-400 hover:bg-red-950/30">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
-                </td>
+                {isAdmin && (
+                  <td className="px-3 py-2">
+                    <div className="flex gap-1 justify-end">
+                      <Button size="icon" variant="ghost" onClick={() => openEdit(r)} className="w-7 h-7 text-zinc-400 hover:text-white hover:bg-zinc-700">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button size="icon" variant="ghost" onClick={() => setConfirmDelete(r)} className="w-7 h-7 text-zinc-600 hover:text-red-400 hover:bg-red-950/30">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

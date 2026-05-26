@@ -1,17 +1,14 @@
 import { z } from "zod";
 
 export const localLoginSchema = z.object({
-  username: z.string().min(1, "Ingresa tu usuario"),
+  email: z.string().email("Correo inválido"),
   password: z.string().min(1, "Ingresa tu contraseña"),
 });
 
 export const localRegisterSchema = z
   .object({
-    username: z
-      .string()
-      .min(3, "Mínimo 3 caracteres")
-      .max(30, "Máximo 30 caracteres")
-      .regex(/^[a-zA-Z0-9._-]+$/, "Solo letras, números, puntos o guiones"),
+    email: z.string().email("Correo inválido"),
+    name: z.string().min(2, "Mínimo 2 caracteres").optional(),
     password: z.string().min(6, "Mínimo 6 caracteres"),
     confirmPassword: z.string().min(1, "Confirma tu contraseña"),
   })

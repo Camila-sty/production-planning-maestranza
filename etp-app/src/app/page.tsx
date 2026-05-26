@@ -20,6 +20,7 @@ export const dynamic = "force-dynamic";
 export default async function HomePage() {
   const user = await getUser();
   if (!user) redirect("/auth/login");
+  const isAdmin = user.isAdmin;
 
   // Find active and previous planning runs
   const [activeRun, previousRun] = await Promise.all([
@@ -102,6 +103,11 @@ export default async function HomePage() {
           </div>
           <div className="flex items-center gap-2">
             <span className="text-xs text-zinc-500 hidden sm:block">{user.email}</span>
+            {isAdmin && (
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-amber-500 bg-amber-500/10 border border-amber-500/30 rounded px-1.5 py-0.5 hidden sm:block">
+                Admin
+              </span>
+            )}
             <ThemeToggle />
             <form action={logout}>
               <Button
@@ -137,6 +143,7 @@ export default async function HomePage() {
               records={records as unknown as SalesPlanning[]}
               endDateMap={endDateMap}
               historyMap={historyMap}
+              isAdmin={isAdmin}
             />
           </div>
         </section>
@@ -151,7 +158,7 @@ export default async function HomePage() {
                 Respeta capacidades por proceso y optimiza según prioridad y atraso.
                 Equipos sin fecha de llegada son excluidos automáticamente.
               </p>
-              <PlanButton hasResults={hasResults} hasPrevious={hasPrevious} />
+              <PlanButton hasResults={hasResults} hasPrevious={hasPrevious} isAdmin={isAdmin} />
             </div>
 
             {activeRun && (
@@ -182,6 +189,7 @@ export default async function HomePage() {
               <SpecialDaysPanel
                 specialDays={specialDays as unknown as SpecialWorkingDay[]}
                 activePlanRunCreatedAt={activeRun ? new Date(activeRun.created_at) : null}
+                isAdmin={isAdmin}
               />
             </div>
           </div>
@@ -195,7 +203,7 @@ export default async function HomePage() {
               Define el orden global de procesos y cuántos equipos pueden estar simultáneamente en cada proceso (días hábiles).
               Procesos con orden=0 o capacidad=0 son ignorados por el planificador.
             </p>
-            <ProcessCapacityTable records={processCapacities as unknown as ProcessCapacity[]} />
+            <ProcessCapacityTable records={processCapacities as unknown as ProcessCapacity[]} isAdmin={isAdmin} />
           </div>
         </section>
 
@@ -210,6 +218,7 @@ export default async function HomePage() {
             <LeadTimeTable
               records={leadTimes as unknown as LeadTimeByCode[]}
               processes={processCapacities as unknown as ProcessCapacity[]}
+              isAdmin={isAdmin}
             />
           </div>
         </section>

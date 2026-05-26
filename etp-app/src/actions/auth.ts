@@ -3,22 +3,30 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { isAdminEmail } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 
-// ── Local username/password auth (DEV_AUTH=true) ─────────────────────────────
+// ── Local email/password auth (DEV_AUTH=true) ────────────────────────────────
 
 export async function localLogin(
-  username: string,
+  email: string,
   password: string
 ): Promise<{ error?: string }> {
-  const user = await prisma.localUser.findUnique({ where: { username } });
-  if (!user) return { error: "Usuario o contraseña incorrectos" };
+  const user = await prisma.localUser.findUnique({ where: { email } });
+  if (!user) return { error: "Correo o contraseña incorrectos" };
+  if (!user.is_active) return { error: "Cuenta desactivada. Contacta al administrador." };
 
   const valid = await bcrypt.compare(password, user.password_hash);
-  if (!valid) return { error: "Usuario o contraseña incorrectos" };
+  if (!valid) return { error: "Correo o contraseña incorrectos" };
+
+  // Auto-promote to admin role if email is in ADMIN_EMAILS
+  const expectedRole = isAdminEmail(email) ? "admin" : "user";
+  if (user.role !== expectedRole) {
+    await prisma.localUser.update({ where: { email }, data: { role: expectedRole } });
+  }
 
   const cookieStore = await cookies();
-  cookieStore.set("dev-session", username, {
+  cookieStore.set("dev-session", email, {
     httpOnly: true,
     path: "/",
     maxAge: 60 * 60 * 24 * 7,
@@ -29,17 +37,23 @@ export async function localLogin(
 }
 
 export async function localRegister(
-  username: string,
-  password: string
+  email: string,
+  password: string,
+  name?: string
 ): Promise<{ error?: string }> {
-  const existing = await prisma.localUser.findUnique({ where: { username } });
-  if (existing) return { error: "Ese nombre de usuario ya está en uso" };
+  if (process.env.ALLOW_PUBLIC_REGISTER === "false") {
+    return { error: "El registro está deshabilitado. Contacta al administrador." };
+  }
 
+  const existing = await prisma.localUser.findUnique({ where: { email } });
+  if (existing) return { error: "Ese correo ya está en uso" };
+
+  const role = isAdminEmail(email) ? "admin" : "user";
   const password_hash = await bcrypt.hash(password, 10);
-  await prisma.localUser.create({ data: { username, password_hash } });
+  await prisma.localUser.create({ data: { email, name, password_hash, role } });
 
   const cookieStore = await cookies();
-  cookieStore.set("dev-session", username, {
+  cookieStore.set("dev-session", email, {
     httpOnly: true,
     path: "/",
     maxAge: 60 * 60 * 24 * 7,

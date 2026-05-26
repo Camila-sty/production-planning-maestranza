@@ -9,9 +9,10 @@ import { BrainCircuit, Download, Loader2, Undo2 } from "lucide-react";
 interface Props {
   hasResults: boolean;
   hasPrevious: boolean;
+  isAdmin: boolean;
 }
 
-export function PlanButton({ hasResults, hasPrevious }: Props) {
+export function PlanButton({ hasResults, hasPrevious, isAdmin }: Props) {
   const [planning, setPlanning] = useState(false);
   const [undoing, setUndoing] = useState(false);
   const router = useRouter();
@@ -54,6 +55,14 @@ export function PlanButton({ hasResults, hasPrevious }: Props) {
     } finally {
       setUndoing(false);
     }
+  }
+
+  if (!isAdmin) {
+    return (
+      <p className="text-xs text-zinc-600 italic">
+        Solo administradores pueden ejecutar la planificación.
+      </p>
+    );
   }
 
   return (

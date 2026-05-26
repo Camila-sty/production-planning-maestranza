@@ -11,6 +11,7 @@ export async function createProcessCapacity(
 ) {
   const user = await getUser();
   if (!user) return { error: "No autenticado" };
+  if (!user.isAdmin) return { error: "No autorizado: requiere rol administrador." };
 
   const parsed = processCapacitySchema.safeParse(data);
   if (!parsed.success) return { error: parsed.error.flatten().fieldErrors };
@@ -33,6 +34,7 @@ export async function updateProcessCapacity(
 ) {
   const user = await getUser();
   if (!user) return { error: "No autenticado" };
+  if (!user.isAdmin) return { error: "No autorizado: requiere rol administrador." };
 
   const parsed = processCapacitySchema.safeParse(data);
   if (!parsed.success) return { error: parsed.error.flatten().fieldErrors };
@@ -53,6 +55,7 @@ export async function updateProcessCapacity(
 export async function deleteProcessCapacity(id: string) {
   const user = await getUser();
   if (!user) return { error: "No autenticado" };
+  if (!user.isAdmin) return { error: "No autorizado: requiere rol administrador." };
 
   try {
     await prisma.processCapacity.delete({ where: { id } });

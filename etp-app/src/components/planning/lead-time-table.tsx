@@ -22,6 +22,7 @@ import type { LeadTimeByCode, ProcessCapacity } from "@/types";
 interface Props {
   records: LeadTimeByCode[];
   processes: ProcessCapacity[];
+  isAdmin: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -67,7 +68,7 @@ type EquipForm = {
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
-export function LeadTimeTable({ records, processes }: Props) {
+export function LeadTimeTable({ records, processes, isAdmin }: Props) {
   const [search, setSearch] = useState("");
   const [cellDialog, setCellDialog] = useState<CellForm | null>(null);
   const [equipDialog, setEquipDialog] = useState<EquipForm | null>(null);
@@ -369,13 +370,15 @@ export function LeadTimeTable({ records, processes }: Props) {
           />
         </div>
         <span className="text-xs text-zinc-500">{rows.length} equipos</span>
-        <Button
-          size="sm"
-          onClick={handleOpenEquip}
-          className="ml-auto bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 h-7 text-xs gap-1"
-        >
-          <Plus className="w-3.5 h-3.5" /> Nuevo equipo
-        </Button>
+        {isAdmin && (
+          <Button
+            size="sm"
+            onClick={handleOpenEquip}
+            className="ml-auto bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 h-7 text-xs gap-1"
+          >
+            <Plus className="w-3.5 h-3.5" /> Nuevo equipo
+          </Button>
+        )}
       </div>
 
       {/* Pivot table */}
@@ -405,8 +408,8 @@ export function LeadTimeTable({ records, processes }: Props) {
                   {proc}
                 </th>
               ))}
-              {/* Delete col */}
-              <th className="border-b border-zinc-800 px-2 py-2.5" style={{ minWidth: 36 }} />
+              {/* Delete col — admin only */}
+              {isAdmin && <th className="border-b border-zinc-800 px-2 py-2.5" style={{ minWidth: 36 }} />}
             </tr>
           </thead>
           <tbody>
@@ -458,14 +461,15 @@ export function LeadTimeTable({ records, processes }: Props) {
                   return (
                     <td
                       key={proc}
-                      onClick={() => handleCellClick(row, proc)}
-                      title={`${row.codigo_plazo} / ${proc}: ${dias} días — clic para editar`}
+                      onClick={isAdmin ? () => handleCellClick(row, proc) : undefined}
+                      title={isAdmin ? `${row.codigo_plazo} / ${proc}: ${dias} días — clic para editar` : undefined}
                       className={[
-                        "border border-zinc-800/60 text-center tabular-nums cursor-pointer select-none transition-colors",
+                        "border border-zinc-800/60 text-center tabular-nums select-none transition-colors",
                         "py-2 px-1",
+                        isAdmin ? "cursor-pointer" : "cursor-default",
                         active
-                          ? "text-zinc-100 font-medium hover:bg-amber-500/20"
-                          : "text-zinc-700 hover:bg-zinc-800/60",
+                          ? isAdmin ? "text-zinc-100 font-medium hover:bg-amber-500/20" : "text-zinc-100 font-medium"
+                          : isAdmin ? "text-zinc-700 hover:bg-zinc-800/60" : "text-zinc-700",
                       ].join(" ")}
                       style={{
                         background: active ? "rgba(245,158,11,0.08)" : undefined,
@@ -476,17 +480,19 @@ export function LeadTimeTable({ records, processes }: Props) {
                   );
                 })}
 
-                {/* Delete row */}
-                <td className="border border-zinc-800/60 px-1 text-center">
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => setConfirmDeleteRow(row)}
-                    className="w-6 h-6 text-zinc-700 hover:text-red-400 hover:bg-red-950/30"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </Button>
-                </td>
+                {/* Delete row — admin only */}
+                {isAdmin && (
+                  <td className="border border-zinc-800/60 px-1 text-center">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => setConfirmDeleteRow(row)}
+                      className="w-6 h-6 text-zinc-700 hover:text-red-400 hover:bg-red-950/30"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </Button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -494,7 +500,9 @@ export function LeadTimeTable({ records, processes }: Props) {
       </div>
 
       <p className="text-xs text-zinc-600">
-        Haz clic en cualquier celda para editar la duración. Celdas activas (días &gt; 0) tienen fondo ámbar tenue.
+        {isAdmin
+          ? "Haz clic en cualquier celda para editar la duración. Celdas activas (días > 0) tienen fondo ámbar tenue."
+          : "Celdas activas (días > 0) tienen fondo ámbar tenue. Solo administradores pueden editar."}
       </p>
     </div>
   );

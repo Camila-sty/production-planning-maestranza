@@ -9,6 +9,7 @@ import { z } from "zod";
 export async function createLeadTime(data: z.infer<typeof leadTimeSchema>) {
   const user = await getUser();
   if (!user) return { error: "No autenticado" };
+  if (!user.isAdmin) return { error: "No autorizado: requiere rol administrador." };
 
   const parsed = leadTimeSchema.safeParse(data);
   if (!parsed.success) return { error: parsed.error.flatten().fieldErrors };
@@ -31,6 +32,7 @@ export async function updateLeadTime(
 ) {
   const user = await getUser();
   if (!user) return { error: "No autenticado" };
+  if (!user.isAdmin) return { error: "No autorizado: requiere rol administrador." };
 
   const parsed = leadTimeSchema.safeParse(data);
   if (!parsed.success) return { error: parsed.error.flatten().fieldErrors };
@@ -51,6 +53,7 @@ export async function updateLeadTime(
 export async function deleteLeadTime(id: string) {
   const user = await getUser();
   if (!user) return { error: "No autenticado" };
+  if (!user.isAdmin) return { error: "No autorizado: requiere rol administrador." };
 
   try {
     await prisma.leadTimeByCode.delete({ where: { id } });

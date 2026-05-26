@@ -24,6 +24,7 @@ interface PlanningTableProps {
   records: SalesPlanning[];
   endDateMap: Record<string, string>;
   historyMap: Record<string, PlanRunHistoryEntry[]>;
+  isAdmin: boolean;
 }
 
 function fmtShort(iso: string): string {
@@ -60,7 +61,7 @@ function HistoryTooltip({ history }: { history: PlanRunHistoryEntry[] }) {
   );
 }
 
-export function PlanningTable({ records, endDateMap, historyMap }: PlanningTableProps) {
+export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: PlanningTableProps) {
   const router = useRouter();
   const [localRecords, setLocalRecords] = useState(records);
   const [search, setSearch] = useState("");
@@ -140,7 +141,7 @@ export function PlanningTable({ records, endDateMap, historyMap }: PlanningTable
     }
   }
 
-  const COLS = ["OT", "Cód. Plazo", "Cliente", "Equipo", "VIN", "Llegada", "Prioridad", "Buffer", "Entrega Estimada", "Estado", "Creado por", "Acciones"];
+  const COLS = ["OT", "Cód. Plazo", "Cliente", "Equipo", "VIN", "Llegada", "Prioridad", ...(isAdmin ? ["Buffer"] : []), "Entrega Estimada", "Estado", "Creado por", "Acciones"];
 
   return (
     <div className="space-y-4">
@@ -324,20 +325,22 @@ export function PlanningTable({ records, endDateMap, historyMap }: PlanningTable
                     ) : "—"}
                   </td>
 
-                  {/* Buffer */}
-                  <td className="px-3 py-2.5">
-                    {r.planning_buffer_days != null ? (
-                      <span className={`text-xs font-mono ${
-                        r.planning_buffer_days < 0 ? "text-red-400" :
-                        r.planning_buffer_days > 0 ? "text-green-400" :
-                        "text-zinc-500"
-                      }`}>
-                        {r.planning_buffer_days > 0 ? "+" : ""}{r.planning_buffer_days}d
-                      </span>
-                    ) : (
-                      <span className="text-zinc-700 text-xs">—</span>
-                    )}
-                  </td>
+                  {/* Buffer — admin only */}
+                  {isAdmin && (
+                    <td className="px-3 py-2.5">
+                      {r.planning_buffer_days != null ? (
+                        <span className={`text-xs font-mono ${
+                          r.planning_buffer_days < 0 ? "text-red-400" :
+                          r.planning_buffer_days > 0 ? "text-green-400" :
+                          "text-zinc-500"
+                        }`}>
+                          {r.planning_buffer_days > 0 ? "+" : ""}{r.planning_buffer_days}d
+                        </span>
+                      ) : (
+                        <span className="text-zinc-700 text-xs">—</span>
+                      )}
+                    </td>
+                  )}
 
                   {/* Entrega Estimada — from active planning run */}
                   <td className="px-3 py-2.5 text-zinc-300 whitespace-nowrap tabular-nums text-xs">
@@ -375,10 +378,12 @@ export function PlanningTable({ records, endDateMap, historyMap }: PlanningTable
                         className="w-7 h-7 text-zinc-400 hover:text-white hover:bg-zinc-700" title="Editar">
                         <Pencil className="w-3.5 h-3.5" />
                       </Button>
-                      <Button size="icon" variant="ghost" onClick={() => openBuffer(r)}
-                        className="w-7 h-7 text-zinc-500 hover:text-amber-400 hover:bg-amber-950/30" title="Ajustar buffer">
-                        <Timer className="w-3.5 h-3.5" />
-                      </Button>
+                      {isAdmin && (
+                        <Button size="icon" variant="ghost" onClick={() => openBuffer(r)}
+                          className="w-7 h-7 text-zinc-500 hover:text-amber-400 hover:bg-amber-950/30" title="Ajustar buffer">
+                          <Timer className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
                       <Button size="icon" variant="ghost" onClick={() => setConfirmDeleteRecord(r)}
                         disabled={deletingId === r.id}
                         className="w-7 h-7 text-zinc-600 hover:text-red-400 hover:bg-red-950/30" title="Eliminar">

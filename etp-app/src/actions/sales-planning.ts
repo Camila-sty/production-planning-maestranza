@@ -95,6 +95,7 @@ export async function upsertBuffer(
 ) {
   const user = await getUser();
   if (!user) return { error: "No autenticado" };
+  if (!user.isAdmin) return { error: "No autorizado: requiere rol administrador." };
 
   const parsed = planningBufferSchema.safeParse(data);
   if (!parsed.success) return { error: parsed.error.flatten().fieldErrors };

@@ -11,6 +11,7 @@ const equipoImages = [
 
 export default function LoginPage() {
   const isDev = process.env.DEV_AUTH === "true";
+  const allowRegister = process.env.ALLOW_PUBLIC_REGISTER !== "false";
 
   return (
     <div className="min-h-screen flex bg-zinc-950">
@@ -73,7 +74,7 @@ export default function LoginPage() {
 
       {/* ── RIGHT PANEL: full-height auth panel ─────────────────── */}
       <div className="w-full lg:w-[480px] xl:w-[520px] flex flex-col bg-zinc-950 relative z-10 border-l border-zinc-800/60">
-        <AuthForm isDev={isDev} />
+        <AuthForm isDev={isDev} allowRegister={allowRegister} />
       </div>
 
     </div>

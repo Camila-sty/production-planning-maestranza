@@ -6,6 +6,8 @@ export async function POST() {
   const user = await getUser();
   if (!user)
     return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+  if (!user.isAdmin)
+    return NextResponse.json({ error: "No autorizado: requiere rol administrador." }, { status: 403 });
 
   // Find active and previous runs
   const [activeRun, previousRun] = await Promise.all([

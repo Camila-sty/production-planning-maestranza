@@ -13,6 +13,7 @@ import { CalendarPlus, Trash2 } from "lucide-react";
 interface Props {
   specialDays: SpecialWorkingDay[];
   activePlanRunCreatedAt: Date | null;
+  isAdmin: boolean;
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -21,7 +22,7 @@ const TYPE_LABELS: Record<string, string> = {
   EXTRA_WORKING_DAY: "Día extra",
 };
 
-export function SpecialDaysPanel({ specialDays, activePlanRunCreatedAt }: Props) {
+export function SpecialDaysPanel({ specialDays, activePlanRunCreatedAt, isAdmin }: Props) {
   const router = useRouter();
   const [date, setDate] = useState("");
   const [type, setType] = useState("WEEKEND_WORKING");
@@ -80,49 +81,51 @@ export function SpecialDaysPanel({ specialDays, activePlanRunCreatedAt }: Props)
         Las fechas ya usadas en la planificación activa aparecen bloqueadas.
       </p>
 
-      {/* Add form */}
-      <div className="flex flex-wrap gap-3 items-end">
-        <div className="space-y-1">
-          <Label className="text-xs text-zinc-400 uppercase tracking-wide">Fecha</Label>
-          <Input
-            type="date"
-            value={date}
-            min={today}
-            onChange={(e) => setDate(e.target.value)}
-            className="bg-zinc-800/50 border-zinc-700 text-white h-8 text-sm w-40"
-          />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs text-zinc-400 uppercase tracking-wide">Tipo</Label>
-          <select
-            value={type}
-            onChange={(e) => setType(e.target.value)}
-            className="bg-zinc-800/50 border border-zinc-700 text-white text-sm h-8 rounded-md px-2 focus:outline-none focus:border-amber-500"
+      {/* Add form — admin only */}
+      {isAdmin && (
+        <div className="flex flex-wrap gap-3 items-end">
+          <div className="space-y-1">
+            <Label className="text-xs text-zinc-400 uppercase tracking-wide">Fecha</Label>
+            <Input
+              type="date"
+              value={date}
+              min={today}
+              onChange={(e) => setDate(e.target.value)}
+              className="bg-zinc-800/50 border-zinc-700 text-white h-8 text-sm w-40"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-zinc-400 uppercase tracking-wide">Tipo</Label>
+            <select
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+              className="bg-zinc-800/50 border border-zinc-700 text-white text-sm h-8 rounded-md px-2 focus:outline-none focus:border-amber-500"
+            >
+              <option value="WEEKEND_WORKING">Fin de semana trabajable</option>
+              <option value="HOLIDAY_WORKING">Feriado trabajable</option>
+              <option value="EXTRA_WORKING_DAY">Día extra</option>
+            </select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-zinc-400 uppercase tracking-wide">Descripción (opcional)</Label>
+            <Input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Ej: Sábado de emergencia"
+              className="bg-zinc-800/50 border-zinc-700 text-white h-8 text-sm w-52"
+            />
+          </div>
+          <Button
+            onClick={handleAdd}
+            disabled={adding}
+            className="bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold gap-2 h-8"
           >
-            <option value="WEEKEND_WORKING">Fin de semana trabajable</option>
-            <option value="HOLIDAY_WORKING">Feriado trabajable</option>
-            <option value="EXTRA_WORKING_DAY">Día extra</option>
-          </select>
+            <CalendarPlus className="w-4 h-4" />
+            {adding ? "Agregando..." : "Agregar"}
+          </Button>
         </div>
-        <div className="space-y-1">
-          <Label className="text-xs text-zinc-400 uppercase tracking-wide">Descripción (opcional)</Label>
-          <Input
-            type="text"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Ej: Sábado de emergencia"
-            className="bg-zinc-800/50 border-zinc-700 text-white h-8 text-sm w-52"
-          />
-        </div>
-        <Button
-          onClick={handleAdd}
-          disabled={adding}
-          className="bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold gap-2 h-8"
-        >
-          <CalendarPlus className="w-4 h-4" />
-          {adding ? "Agregando..." : "Agregar"}
-        </Button>
-      </div>
+      )}
 
       {/* List */}
       {specialDays.length === 0 ? (
@@ -168,7 +171,7 @@ export function SpecialDaysPanel({ specialDays, activePlanRunCreatedAt }: Props)
                       )}
                     </td>
                     <td className="px-3 py-2">
-                      {!blocked && (
+                      {isAdmin && !blocked && (
                         <Button
                           size="icon"
                           variant="ghost"

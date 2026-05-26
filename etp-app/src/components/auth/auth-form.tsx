@@ -19,11 +19,12 @@ import { toast } from "sonner";
 
 interface Props {
   isDev?: boolean;
+  allowRegister?: boolean;
 }
 
-export function AuthForm({ isDev }: Props) {
-  if (isDev) return <LocalAuthPanel />;
-  return <SupabaseAuthPanel />;
+export function AuthForm({ isDev, allowRegister = true }: Props) {
+  if (isDev) return <LocalAuthPanel allowRegister={allowRegister} />;
+  return <SupabaseAuthPanel allowRegister={allowRegister} />;
 }
 
 // ── Shared logo strip ─────────────────────────────────────────────────────────
@@ -54,7 +55,7 @@ function LogoStrip() {
 
 // ── Local auth panel ──────────────────────────────────────────────────────────
 
-function LocalAuthPanel() {
+function LocalAuthPanel({ allowRegister }: { allowRegister: boolean }) {
   const [mode, setMode] = useState<"login" | "register">("login");
 
   return (
@@ -73,31 +74,33 @@ function LocalAuthPanel() {
           </p>
         </div>
 
-        {/* Mode tabs */}
-        <div className="flex gap-1 mb-8 bg-zinc-800/60 rounded-lg p-1 w-fit">
-          <button
-            onClick={() => setMode("login")}
-            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              mode === "login"
-                ? "bg-zinc-700 text-white shadow-sm"
-                : "text-zinc-500 hover:text-zinc-300"
-            }`}
-          >
-            Iniciar sesión
-          </button>
-          <button
-            onClick={() => setMode("register")}
-            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              mode === "register"
-                ? "bg-zinc-700 text-white shadow-sm"
-                : "text-zinc-500 hover:text-zinc-300"
-            }`}
-          >
-            Crear usuario
-          </button>
-        </div>
+        {/* Mode tabs — only shown when registration is allowed */}
+        {allowRegister && (
+          <div className="flex gap-1 mb-8 bg-zinc-800/60 rounded-lg p-1 w-fit">
+            <button
+              onClick={() => setMode("login")}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                mode === "login"
+                  ? "bg-zinc-700 text-white shadow-sm"
+                  : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              Iniciar sesión
+            </button>
+            <button
+              onClick={() => setMode("register")}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                mode === "register"
+                  ? "bg-zinc-700 text-white shadow-sm"
+                  : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              Crear usuario
+            </button>
+          </div>
+        )}
 
-        {mode === "login" ? <LoginForm /> : <RegisterForm />}
+        {mode === "login" || !allowRegister ? <LoginForm /> : <RegisterForm />}
       </div>
 
       <p className="px-8 sm:px-12 xl:px-14 pb-8 text-xs text-zinc-700 text-center">
@@ -119,9 +122,11 @@ function LoginForm() {
     resolver: zodResolver(localLoginSchema),
   });
 
+  const [forgotPassword, setForgotPassword] = useState(false);
+
   async function onSubmit(data: LocalLoginInput) {
     setServerError(null);
-    const result = await localLogin(data.username, data.password);
+    const result = await localLogin(data.email, data.password);
     if (result.error) {
       setServerError(result.error);
     } else {
@@ -130,28 +135,54 @@ function LoginForm() {
     }
   }
 
+  if (forgotPassword) {
+    return (
+      <div className="max-w-sm space-y-4">
+        <p className="text-zinc-300 text-sm leading-relaxed">
+          Para restablecer tu contraseña, contacta al administrador del sistema.
+        </p>
+        <button
+          onClick={() => setForgotPassword(false)}
+          className="text-amber-400 hover:text-amber-300 text-sm underline underline-offset-2"
+        >
+          Volver al inicio de sesión
+        </button>
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5 max-w-sm">
       <div className="space-y-1.5">
-        <Label htmlFor="username-login" className="text-zinc-300 text-sm">
-          Usuario
+        <Label htmlFor="email-login" className="text-zinc-300 text-sm">
+          Correo electrónico
         </Label>
         <Input
-          id="username-login"
-          autoComplete="username"
-          placeholder="tu_usuario"
-          {...register("username")}
+          id="email-login"
+          type="email"
+          autoComplete="email"
+          placeholder="usuario@empresa.cl"
+          {...register("email")}
           className="bg-zinc-800/70 border-zinc-700 text-white placeholder:text-zinc-600 focus:border-amber-500 h-11"
         />
-        {errors.username && (
-          <p className="text-xs text-red-400">{errors.username.message}</p>
+        {errors.email && (
+          <p className="text-xs text-red-400">{errors.email.message}</p>
         )}
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="password-login" className="text-zinc-300 text-sm">
-          Contraseña
-        </Label>
+        <div className="flex items-center justify-between">
+          <Label htmlFor="password-login" className="text-zinc-300 text-sm">
+            Contraseña
+          </Label>
+          <button
+            type="button"
+            onClick={() => setForgotPassword(true)}
+            className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+          >
+            ¿Olvidaste tu contraseña?
+          </button>
+        </div>
         <Input
           id="password-login"
           type="password"
@@ -196,11 +227,11 @@ function RegisterForm() {
 
   async function onSubmit(data: LocalRegisterInput) {
     setServerError(null);
-    const result = await localRegister(data.username, data.password);
+    const result = await localRegister(data.email, data.password, data.name);
     if (result.error) {
       setServerError(result.error);
     } else {
-      toast.success(`Usuario "${data.username}" creado. ¡Bienvenido!`);
+      toast.success(`Cuenta creada. ¡Bienvenido!`);
       router.push("/");
       router.refresh();
     }
@@ -209,18 +240,35 @@ function RegisterForm() {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5 max-w-sm">
       <div className="space-y-1.5">
-        <Label htmlFor="username-reg" className="text-zinc-300 text-sm">
-          Usuario
+        <Label htmlFor="email-reg" className="text-zinc-300 text-sm">
+          Correo electrónico
         </Label>
         <Input
-          id="username-reg"
-          autoComplete="username"
-          placeholder="min. 3 caracteres"
-          {...register("username")}
+          id="email-reg"
+          type="email"
+          autoComplete="email"
+          placeholder="usuario@empresa.cl"
+          {...register("email")}
           className="bg-zinc-800/70 border-zinc-700 text-white placeholder:text-zinc-600 focus:border-amber-500 h-11"
         />
-        {errors.username && (
-          <p className="text-xs text-red-400">{errors.username.message}</p>
+        {errors.email && (
+          <p className="text-xs text-red-400">{errors.email.message}</p>
+        )}
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="name-reg" className="text-zinc-300 text-sm">
+          Nombre (opcional)
+        </Label>
+        <Input
+          id="name-reg"
+          autoComplete="name"
+          placeholder="Tu nombre"
+          {...register("name")}
+          className="bg-zinc-800/70 border-zinc-700 text-white placeholder:text-zinc-600 focus:border-amber-500 h-11"
+        />
+        {errors.name && (
+          <p className="text-xs text-red-400">{errors.name.message}</p>
         )}
       </div>
 
@@ -271,7 +319,7 @@ function RegisterForm() {
         disabled={isSubmitting}
         className="w-full h-11 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold text-sm"
       >
-        {isSubmitting ? "Creando usuario..." : "Crear usuario"}
+        {isSubmitting ? "Creando cuenta..." : "Crear cuenta"}
       </Button>
     </form>
   );
@@ -279,8 +327,8 @@ function RegisterForm() {
 
 // ── Supabase auth panel (production) ─────────────────────────────────────────
 
-function SupabaseAuthPanel() {
-  const [mode, setMode] = useState<"login" | "signup">("login");
+function SupabaseAuthPanel({ allowRegister }: { allowRegister: boolean }) {
+  const [mode, setMode] = useState<"login" | "signup" | "forgot">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -292,23 +340,19 @@ function SupabaseAuthPanel() {
     setLoading(true);
     try {
       if (mode === "login") {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (error) {
-          toast.error(error.message);
-          return;
-        }
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) { toast.error(error.message); return; }
         router.push("/");
         router.refresh();
-      } else {
+      } else if (mode === "signup") {
         const { error } = await supabase.auth.signUp({ email, password });
-        if (error) {
-          toast.error(error.message);
-          return;
-        }
+        if (error) { toast.error(error.message); return; }
         toast.success("Revisa tu correo para confirmar tu cuenta.");
+        setMode("login");
+      } else {
+        const { error } = await supabase.auth.resetPasswordForEmail(email);
+        if (error) { toast.error(error.message); return; }
+        toast.success("Revisa tu correo para restablecer tu contraseña.");
         setMode("login");
       }
     } finally {
@@ -332,36 +376,38 @@ function SupabaseAuthPanel() {
           </p>
         </div>
 
-        <div className="flex gap-1 mb-8 bg-zinc-800/60 rounded-lg p-1 w-fit">
-          <button
-            onClick={() => setMode("login")}
-            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              mode === "login"
-                ? "bg-zinc-700 text-white shadow-sm"
-                : "text-zinc-500 hover:text-zinc-300"
-            }`}
-          >
-            Iniciar sesión
-          </button>
-          <button
-            onClick={() => setMode("signup")}
-            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              mode === "signup"
-                ? "bg-zinc-700 text-white shadow-sm"
-                : "text-zinc-500 hover:text-zinc-300"
-            }`}
-          >
-            Crear cuenta
-          </button>
-        </div>
+        {allowRegister && mode !== "forgot" && (
+          <div className="flex gap-1 mb-8 bg-zinc-800/60 rounded-lg p-1 w-fit">
+            <button
+              onClick={() => setMode("login")}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                mode === "login"
+                  ? "bg-zinc-700 text-white shadow-sm"
+                  : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              Iniciar sesión
+            </button>
+            <button
+              onClick={() => setMode("signup")}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                mode === "signup"
+                  ? "bg-zinc-700 text-white shadow-sm"
+                  : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              Crear cuenta
+            </button>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-5 max-w-sm">
           <div className="space-y-1.5">
-            <Label htmlFor="email" className="text-zinc-300 text-sm">
-              Correo
+            <Label htmlFor="supabase-email" className="text-zinc-300 text-sm">
+              Correo electrónico
             </Label>
             <Input
-              id="email"
+              id="supabase-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -370,20 +416,35 @@ function SupabaseAuthPanel() {
               className="bg-zinc-800/70 border-zinc-700 text-white placeholder:text-zinc-600 focus:border-amber-500 h-11"
             />
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="password" className="text-zinc-300 text-sm">
-              Contraseña
-            </Label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              className="bg-zinc-800/70 border-zinc-700 text-white placeholder:text-zinc-600 focus:border-amber-500 h-11"
-            />
-          </div>
+
+          {mode !== "forgot" && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="supabase-password" className="text-zinc-300 text-sm">
+                  Contraseña
+                </Label>
+                {mode === "login" && (
+                  <button
+                    type="button"
+                    onClick={() => setMode("forgot")}
+                    className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                  >
+                    ¿Olvidaste tu contraseña?
+                  </button>
+                )}
+              </div>
+              <Input
+                id="supabase-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                className="bg-zinc-800/70 border-zinc-700 text-white placeholder:text-zinc-600 focus:border-amber-500 h-11"
+              />
+            </div>
+          )}
+
           <Button
             type="submit"
             disabled={loading}
@@ -393,8 +454,20 @@ function SupabaseAuthPanel() {
               ? "Cargando..."
               : mode === "login"
               ? "Ingresar"
-              : "Registrarse"}
+              : mode === "signup"
+              ? "Registrarse"
+              : "Enviar enlace de recuperación"}
           </Button>
+
+          {mode === "forgot" && (
+            <button
+              type="button"
+              onClick={() => setMode("login")}
+              className="w-full text-center text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+            >
+              Volver al inicio de sesión
+            </button>
+          )}
         </form>
       </div>
 
