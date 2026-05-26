@@ -27,11 +27,12 @@ interface PlanningTableProps {
 }
 
 function fmtShort(iso: string): string {
-  const d = new Date(iso);
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  return `${dd}-${mm}-${yyyy}`;
+  // Use slice(0,10) to read the calendar date directly from the ISO string,
+  // avoiding timezone shifts (dates from the planner are UTC midnight).
+  const datePart = iso.slice(0, 10); // "YYYY-MM-DD"
+  const [y, m, day] = datePart.split("-").map(Number);
+  if (!y || !m || !day) return "—";
+  return `${String(day).padStart(2, "0")}-${String(m).padStart(2, "0")}-${y}`;
 }
 
 /** Tooltip with history of estimated end dates */
@@ -63,6 +64,7 @@ export function PlanningTable({ records, endDateMap, historyMap }: PlanningTable
   const router = useRouter();
   const [localRecords, setLocalRecords] = useState(records);
   const [search, setSearch] = useState("");
+  const [arrivalFilter, setArrivalFilter] = useState<"all" | "with" | "without">("all");
   const [editingRecord, setEditingRecord] = useState<SalesPlanning | null>(null);
   const [bufferRecord, setBufferRecord] = useState<SalesPlanning | null>(null);
   const [confirmDeleteRecord, setConfirmDeleteRecord] = useState<SalesPlanning | null>(null);
@@ -76,15 +78,19 @@ export function PlanningTable({ records, endDateMap, historyMap }: PlanningTable
 
   const filtered = localRecords.filter((r) => {
     const q = search.toLowerCase();
-    return (
+    const matchesText =
       !q ||
       r.ot?.toLowerCase().includes(q) ||
       r.cliente?.toLowerCase().includes(q) ||
       r.equipo?.toLowerCase().includes(q) ||
       r.vin?.toLowerCase().includes(q) ||
       r.patente?.toLowerCase().includes(q) ||
-      r.modelo?.toLowerCase().includes(q)
-    );
+      r.modelo?.toLowerCase().includes(q);
+    const matchesArrival =
+      arrivalFilter === "all" ||
+      (arrivalFilter === "with" && r.llegada != null) ||
+      (arrivalFilter === "without" && r.llegada == null);
+    return matchesText && matchesArrival;
   });
 
   async function handleDelete(record: SalesPlanning) {
@@ -134,7 +140,7 @@ export function PlanningTable({ records, endDateMap, historyMap }: PlanningTable
     }
   }
 
-  const COLS = ["OT", "Cliente", "Equipo", "VIN", "Llegada", "Prioridad", "Buffer", "Entrega Estimada", "Estado", "Creado por", "Acciones"];
+  const COLS = ["OT", "Cód. Plazo", "Cliente", "Equipo", "VIN", "Llegada", "Prioridad", "Buffer", "Entrega Estimada", "Estado", "Creado por", "Acciones"];
 
   return (
     <div className="space-y-4">
@@ -233,9 +239,9 @@ export function PlanningTable({ records, endDateMap, historyMap }: PlanningTable
         </DialogContent>
       </Dialog>
 
-      {/* Search */}
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
+      {/* Search + Arrival filter */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-48 max-w-sm">
           <Search className="absolute left-2.5 top-2 w-4 h-4 text-zinc-500" />
           <Input
             placeholder="Buscar por OT, cliente, equipo, VIN..."
@@ -244,6 +250,15 @@ export function PlanningTable({ records, endDateMap, historyMap }: PlanningTable
             className="pl-8 bg-zinc-800/50 border-zinc-700 text-white placeholder:text-zinc-600 focus:border-amber-500 h-8 text-sm"
           />
         </div>
+        <select
+          value={arrivalFilter}
+          onChange={(e) => setArrivalFilter(e.target.value as "all" | "with" | "without")}
+          className="h-8 px-2.5 rounded-md border border-zinc-700 bg-zinc-800/50 text-sm text-zinc-300 focus:outline-none focus:border-amber-500 cursor-pointer"
+        >
+          <option value="all">Todos</option>
+          <option value="with">Con llegada</option>
+          <option value="without">Sin llegada</option>
+        </select>
         <span className="text-xs text-zinc-500">{filtered.length} registro{filtered.length !== 1 ? "s" : ""}</span>
       </div>
 
@@ -280,6 +295,11 @@ export function PlanningTable({ records, endDateMap, historyMap }: PlanningTable
                 >
                   {/* OT */}
                   <td className="px-3 py-2.5 font-mono text-amber-400 text-xs">{r.ot || "—"}</td>
+
+                  {/* Código Plazo */}
+                  <td className="px-3 py-2.5 font-mono text-xs text-zinc-400">
+                    {r.codigo_plazo ?? <span className="text-zinc-700">—</span>}
+                  </td>
 
                   {/* Cliente */}
                   <td className="px-3 py-2.5 text-zinc-200 whitespace-nowrap">{r.cliente || "—"}</td>

@@ -41,6 +41,13 @@ export async function POST() {
     data: { used_in_planning: false, planning_run_id: null },
   });
 
+  // Clear buffer adjustments that were applied in the undone run
+  // (those set after the previous run was created — they fed into the active run)
+  await prisma.salesPlanning.updateMany({
+    where: { planning_buffer_at: { gt: previousRun.created_at } },
+    data: { planning_buffer_days: null, planning_buffer_note: null, planning_buffer_at: null },
+  });
+
   // Delete active run
   await prisma.planningRun.delete({ where: { id: activeRun.id } });
 

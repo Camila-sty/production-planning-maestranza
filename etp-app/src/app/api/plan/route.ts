@@ -11,14 +11,12 @@ export async function POST() {
   if (!user)
     return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 
-  // cwd() = etp-app directory
-  const dbPath = path.resolve(process.cwd(), "dev.db");
   const scriptPath = path.resolve(process.cwd(), "..", "scripts", "planner.py");
 
   try {
     const { stdout, stderr } = await execFileAsync(
       "python3",
-      [scriptPath, dbPath],
+      [scriptPath],
       { timeout: 120_000 }
     );
     const output = stdout + (stderr ? `\nSTDERR: ${stderr}` : "");
