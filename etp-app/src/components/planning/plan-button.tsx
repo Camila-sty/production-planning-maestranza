@@ -59,9 +59,16 @@ export function PlanButton({ hasResults, hasPrevious, isAdmin }: Props) {
 
   if (!isAdmin) {
     return (
-      <p className="text-xs text-zinc-600 italic">
-        Solo administradores pueden ejecutar la planificación.
-      </p>
+      <a href="/api/export" download>
+        <Button
+          variant="outline"
+          disabled={!hasResults}
+          className="border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-800 gap-2 disabled:opacity-30"
+        >
+          <Download className="w-4 h-4" />
+          Descargar planificación
+        </Button>
+      </a>
     );
   }
 

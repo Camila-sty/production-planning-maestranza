@@ -180,48 +180,54 @@ export default async function HomePage() {
               </div>
             )}
 
-            {/* Días especiales */}
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-0.5 h-4 bg-amber-500/60 rounded-full" />
-                <h3 className="text-sm font-medium text-zinc-300">Días Especiales de Trabajo</h3>
+            {/* Días especiales — admin only */}
+            {isAdmin && (
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-0.5 h-4 bg-amber-500/60 rounded-full" />
+                  <h3 className="text-sm font-medium text-zinc-300">Días Especiales de Trabajo</h3>
+                </div>
+                <SpecialDaysPanel
+                  specialDays={specialDays as unknown as SpecialWorkingDay[]}
+                  activePlanRunCreatedAt={activeRun ? new Date(activeRun.created_at) : null}
+                  isAdmin={isAdmin}
+                />
               </div>
-              <SpecialDaysPanel
-                specialDays={specialDays as unknown as SpecialWorkingDay[]}
-                activePlanRunCreatedAt={activeRun ? new Date(activeRun.created_at) : null}
+            )}
+          </div>
+        </section>
+
+        {/* ── 4. Capacidad por Proceso — admin only ── */}
+        {isAdmin && (
+          <section>
+            <SectionTitle count={processCapacities.length}>Capacidad por Proceso</SectionTitle>
+            <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5">
+              <p className="text-xs text-zinc-500 mb-3">
+                Define el orden global de procesos y cuántos equipos pueden estar simultáneamente en cada proceso (días hábiles).
+                Procesos con orden=0 o capacidad=0 son ignorados por el planificador.
+              </p>
+              <ProcessCapacityTable records={processCapacities as unknown as ProcessCapacity[]} isAdmin={isAdmin} />
+            </div>
+          </section>
+        )}
+
+        {/* ── 5. Tiempos por Código Plazo — admin only ── */}
+        {isAdmin && (
+          <section>
+            <SectionTitle count={leadTimes.length}>Tiempos por Código Plazo</SectionTitle>
+            <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5">
+              <p className="text-xs text-zinc-500 mb-3">
+                Duración en días hábiles de cada proceso según el tipo de equipo (código plazo).
+                Filas con duración=0 son ignoradas por el planificador.
+              </p>
+              <LeadTimeTable
+                records={leadTimes as unknown as LeadTimeByCode[]}
+                processes={processCapacities as unknown as ProcessCapacity[]}
                 isAdmin={isAdmin}
               />
             </div>
-          </div>
-        </section>
-
-        {/* ── 4. Capacidad por Proceso ── */}
-        <section>
-          <SectionTitle count={processCapacities.length}>Capacidad por Proceso</SectionTitle>
-          <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5">
-            <p className="text-xs text-zinc-500 mb-3">
-              Define el orden global de procesos y cuántos equipos pueden estar simultáneamente en cada proceso (días hábiles).
-              Procesos con orden=0 o capacidad=0 son ignorados por el planificador.
-            </p>
-            <ProcessCapacityTable records={processCapacities as unknown as ProcessCapacity[]} isAdmin={isAdmin} />
-          </div>
-        </section>
-
-        {/* ── 5. Tiempos por Código Plazo ── */}
-        <section>
-          <SectionTitle count={leadTimes.length}>Tiempos por Código Plazo</SectionTitle>
-          <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5">
-            <p className="text-xs text-zinc-500 mb-3">
-              Duración en días hábiles de cada proceso según el tipo de equipo (código plazo).
-              Filas con duración=0 son ignoradas por el planificador.
-            </p>
-            <LeadTimeTable
-              records={leadTimes as unknown as LeadTimeByCode[]}
-              processes={processCapacities as unknown as ProcessCapacity[]}
-              isAdmin={isAdmin}
-            />
-          </div>
-        </section>
+          </section>
+        )}
 
       </main>
     </div>
