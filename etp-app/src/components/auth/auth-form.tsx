@@ -391,8 +391,9 @@ function SupabaseAuthPanel({ allowRegister }: { allowRegister: boolean }) {
         setSuccessMsg("Cuenta creada correctamente. Revisa tu correo para confirmar la cuenta.");
 
       } else {
+        const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? window.location.origin;
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: `${window.location.origin}/auth/reset-password`,
+          redirectTo: `${siteUrl}/auth/callback?next=/auth/reset-password`,
         });
         if (error) { setServerError(translateSupabaseError(error.message)); return; }
         setSuccessMsg("Revisa tu correo. Te enviamos un enlace para restablecer tu contraseña.");
