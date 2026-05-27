@@ -28,33 +28,99 @@ function ResetPasswordContent() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  // Exchange the ?code= for a session — runs once on mount
+  // ── Verification — runs once on mount ────────────────────────────────────
   useEffect(() => {
-    async function verify() {
-      const code = searchParams.get("code");
+    let mounted = true;
 
-      if (!code) {
-        setLinkError("Falta el código de recuperación. Solicita un nuevo enlace.");
-        return;
+    // Absolute backup: if anything silently hangs, this ensures we exit loading
+    const backupTimeout = setTimeout(() => {
+      console.log("[reset-password] backup timeout fired — forcing out of loading");
+      if (mounted) {
+        setIsVerifying(false);
+        setLinkError("No pudimos verificar el enlace. Solicita uno nuevo.");
       }
+    }, 10000);
 
+    async function verify() {
       try {
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        // ── 1. Hash fragment (implicit flow): #access_token=...&type=recovery ──
+        const hash = typeof window !== "undefined" ? window.location.hash.slice(1) : "";
+        const hashParams = new URLSearchParams(hash);
+        const hashType    = hashParams.get("type");
+        const accessToken = hashParams.get("access_token");
+        const refreshToken = hashParams.get("refresh_token") ?? "";
+
+        if (hashType === "recovery" && accessToken) {
+          console.log("[reset-password] implicit flow detected via hash fragment");
+          const { error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          if (!mounted) return;
+          if (error) {
+            console.error("[reset-password] setSession error:", error.message);
+            setLinkError("El enlace de recuperación no es válido o expiró. Solicita uno nuevo.");
+          } else {
+            console.log("[reset-password] session established via hash — ready");
+            setIsRecoveryReady(true);
+          }
+          return;
+        }
+
+        // ── 2. PKCE flow: ?code=... ──────────────────────────────────────────
+        const code = searchParams.get("code");
+        console.log("[reset-password] code from URL:", code ? code.slice(0, 12) + "..." : "null");
+
+        if (!code) {
+          console.log("[reset-password] no code and no hash token — invalid link");
+          setLinkError("Falta el código de recuperación. Solicita un nuevo enlace.");
+          return; // finally will still run
+        }
+
+        console.log("[reset-password] calling exchangeCodeForSession...");
+
+        const { data, error } = await Promise.race([
+          supabase.auth.exchangeCodeForSession(code),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("verification_timeout")), 8000)
+          ),
+        ]);
+
+        console.log("[reset-password] exchangeCodeForSession result — error:", error?.message ?? "none");
+        console.log("[reset-password] session user:", data?.session?.user?.email ?? "none");
+
+        if (!mounted) return;
+
         if (error) {
           setLinkError("El enlace de recuperación no es válido o expiró. Solicita uno nuevo.");
         } else {
           setIsRecoveryReady(true);
         }
-      } catch {
-        setLinkError("El enlace de recuperación no es válido o expiró. Solicita uno nuevo.");
+
+      } catch (e) {
+        console.error("[reset-password] caught exception:", e);
+        if (!mounted) return;
+        const isTimeout = e instanceof Error && e.message === "verification_timeout";
+        setLinkError(
+          isTimeout
+            ? "No pudimos verificar el enlace. Solicita uno nuevo."
+            : "El enlace de recuperación no es válido o expiró. Solicita uno nuevo."
+        );
       } finally {
-        setIsVerifying(false);
+        console.log("[reset-password] finally — setIsVerifying(false)");
+        clearTimeout(backupTimeout);
+        if (mounted) setIsVerifying(false);
       }
     }
 
     verify();
+
+    return () => {
+      mounted = false;
+      clearTimeout(backupTimeout);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // intentionally empty — runs once
+  }, []); // empty — runs exactly once
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -92,7 +158,6 @@ function ResetPasswordContent() {
     }
   }
 
-  // Button is disabled while verifying, no valid session, or form is incomplete/invalid
   const canSubmit =
     !isVerifying &&
     isRecoveryReady &&
@@ -101,7 +166,7 @@ function ResetPasswordContent() {
     password === confirm &&
     !submitting;
 
-  // ── Loading state ──────────────────────────────────────────────────────────
+  // ── Loading ────────────────────────────────────────────────────────────────
   if (isVerifying) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-zinc-950">
