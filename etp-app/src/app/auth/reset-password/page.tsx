@@ -1,209 +1,60 @@
 "use client";
 
-import { Suspense, useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Eye, EyeOff, KeyRound, Loader2, AlertCircle } from "lucide-react";
+import { Eye, EyeOff, KeyRound, Loader2 } from "lucide-react";
 
-// ── Inner component — reads search params (requires Suspense boundary) ────────
-
-function ResetPasswordContent() {
+function ResetPasswordForm() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const supabase = createClient();
 
-  // Verification state
-  const [isVerifying, setIsVerifying] = useState(true);
-  const [isRecoveryReady, setIsRecoveryReady] = useState(false);
-  const [linkError, setLinkError] = useState<string | null>(null);
-
-  // Form state
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-
-  // ── Verification — runs once on mount ────────────────────────────────────
-  useEffect(() => {
-    let mounted = true;
-
-    // Absolute backup: if anything silently hangs, this ensures we exit loading
-    const backupTimeout = setTimeout(() => {
-      console.log("[reset-password] backup timeout fired — forcing out of loading");
-      if (mounted) {
-        setIsVerifying(false);
-        setLinkError("No pudimos verificar el enlace. Solicita uno nuevo.");
-      }
-    }, 10000);
-
-    async function verify() {
-      try {
-        // ── 1. Hash fragment (implicit flow): #access_token=...&type=recovery ──
-        const hash = typeof window !== "undefined" ? window.location.hash.slice(1) : "";
-        const hashParams = new URLSearchParams(hash);
-        const hashType    = hashParams.get("type");
-        const accessToken = hashParams.get("access_token");
-        const refreshToken = hashParams.get("refresh_token") ?? "";
-
-        if (hashType === "recovery" && accessToken) {
-          console.log("[reset-password] implicit flow detected via hash fragment");
-          const { error } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-          });
-          if (!mounted) return;
-          if (error) {
-            console.error("[reset-password] setSession error:", error.message);
-            setLinkError("El enlace de recuperación no es válido o expiró. Solicita uno nuevo.");
-          } else {
-            console.log("[reset-password] session established via hash — ready");
-            setIsRecoveryReady(true);
-          }
-          return;
-        }
-
-        // ── 2. PKCE flow: ?code=... ──────────────────────────────────────────
-        const code = searchParams.get("code");
-        console.log("[reset-password] code from URL:", code ? code.slice(0, 12) + "..." : "null");
-
-        if (!code) {
-          console.log("[reset-password] no code and no hash token — invalid link");
-          setLinkError("Falta el código de recuperación. Solicita un nuevo enlace.");
-          return; // finally will still run
-        }
-
-        console.log("[reset-password] calling exchangeCodeForSession...");
-
-        const { data, error } = await Promise.race([
-          supabase.auth.exchangeCodeForSession(code),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("verification_timeout")), 8000)
-          ),
-        ]);
-
-        console.log("[reset-password] exchangeCodeForSession result — error:", error?.message ?? "none");
-        console.log("[reset-password] session user:", data?.session?.user?.email ?? "none");
-
-        if (!mounted) return;
-
-        if (error) {
-          setLinkError("El enlace de recuperación no es válido o expiró. Solicita uno nuevo.");
-        } else {
-          setIsRecoveryReady(true);
-        }
-
-      } catch (e) {
-        console.error("[reset-password] caught exception:", e);
-        if (!mounted) return;
-        const isTimeout = e instanceof Error && e.message === "verification_timeout";
-        setLinkError(
-          isTimeout
-            ? "No pudimos verificar el enlace. Solicita uno nuevo."
-            : "El enlace de recuperación no es válido o expiró. Solicita uno nuevo."
-        );
-      } finally {
-        console.log("[reset-password] finally — setIsVerifying(false)");
-        clearTimeout(backupTimeout);
-        if (mounted) setIsVerifying(false);
-      }
-    }
-
-    verify();
-
-    return () => {
-      mounted = false;
-      clearTimeout(backupTimeout);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // empty — runs exactly once
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setFormError(null);
+    setError(null);
 
     if (password.length < 6) {
-      setFormError("La contraseña debe tener al menos 6 caracteres.");
+      setError("La contraseña debe tener al menos 6 caracteres.");
       return;
     }
     if (password !== confirm) {
-      setFormError("Las contraseñas no coinciden.");
+      setError("Las contraseñas no coinciden.");
       return;
     }
 
     setSubmitting(true);
     try {
-      const { error } = await supabase.auth.updateUser({ password });
-      if (error) {
-        const msg = error.message.toLowerCase();
+      const { error: updateError } = await supabase.auth.updateUser({ password });
+      if (updateError) {
+        const msg = updateError.message.toLowerCase();
         if (msg.includes("same password") || msg.includes("different from")) {
-          setFormError("La nueva contraseña debe ser diferente a la anterior.");
-        } else if (msg.includes("rate limit") || msg.includes("too many")) {
-          setFormError("Demasiados intentos. Espera unos minutos.");
+          setError("La nueva contraseña debe ser diferente a la anterior.");
+        } else if (msg.includes("session") || msg.includes("not authenticated") || msg.includes("jwt")) {
+          setError("El enlace expiró o ya fue usado. Solicita uno nuevo desde el inicio de sesión.");
         } else {
-          setFormError("Ocurrió un error al actualizar la contraseña. Intenta nuevamente.");
+          setError("No se pudo actualizar la contraseña. Intenta nuevamente.");
         }
       } else {
         setSuccess(true);
         setTimeout(() => router.push("/auth/login"), 2000);
       }
     } catch {
-      setFormError("Error de red. Verifica tu conexión e intenta nuevamente.");
+      setError("Error de red. Verifica tu conexión e intenta nuevamente.");
     } finally {
       setSubmitting(false);
     }
   }
 
-  const canSubmit =
-    !isVerifying &&
-    isRecoveryReady &&
-    password.length >= 6 &&
-    confirm.length >= 6 &&
-    password === confirm &&
-    !submitting;
-
-  // ── Loading ────────────────────────────────────────────────────────────────
-  if (isVerifying) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-950">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="w-6 h-6 animate-spin text-zinc-600" />
-          <p className="text-sm text-zinc-600">Verificando enlace…</p>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Invalid / expired link ─────────────────────────────────────────────────
-  if (linkError) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-950 px-4">
-        <div className="w-full max-w-sm text-center">
-          <div className="flex justify-center mb-6">
-            <div className="w-12 h-12 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center justify-center">
-              <AlertCircle className="w-6 h-6 text-red-400" />
-            </div>
-          </div>
-          <h1 className="text-xl font-semibold text-white mb-2">
-            Enlace inválido o expirado
-          </h1>
-          <p className="text-sm text-zinc-500 mb-8">{linkError}</p>
-          <a
-            href="/auth/login"
-            className="block w-full text-center rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-sm font-medium py-2.5 transition-colors"
-          >
-            Volver al inicio de sesión
-          </a>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Success ────────────────────────────────────────────────────────────────
   if (success) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-zinc-950 px-4">
@@ -213,9 +64,7 @@ function ResetPasswordContent() {
               <KeyRound className="w-6 h-6 text-amber-400" />
             </div>
           </div>
-          <h1 className="text-xl font-semibold text-white mb-4">
-            Contraseña actualizada
-          </h1>
+          <h1 className="text-xl font-semibold text-white mb-4">Contraseña actualizada</h1>
           <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-4 text-sm text-emerald-400 space-y-1.5">
             <p className="font-medium">Contraseña actualizada correctamente.</p>
             <p className="text-emerald-500/70">Redirigiendo al inicio de sesión…</p>
@@ -225,7 +74,6 @@ function ResetPasswordContent() {
     );
   }
 
-  // ── Form ───────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen flex items-center justify-center bg-zinc-950 px-4">
       <div className="w-full max-w-sm">
@@ -284,15 +132,15 @@ function ResetPasswordContent() {
             />
           </div>
 
-          {formError && (
+          {error && (
             <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-md px-3 py-2">
-              {formError}
+              {error}
             </p>
           )}
 
           <Button
             type="submit"
-            disabled={!canSubmit}
+            disabled={submitting}
             className="w-full bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold disabled:opacity-40"
           >
             {submitting
@@ -315,8 +163,6 @@ function ResetPasswordContent() {
   );
 }
 
-// ── Page export with Suspense boundary (required for useSearchParams) ─────────
-
 export default function ResetPasswordPage() {
   return (
     <Suspense fallback={
@@ -324,7 +170,7 @@ export default function ResetPasswordPage() {
         <Loader2 className="w-6 h-6 animate-spin text-zinc-600" />
       </div>
     }>
-      <ResetPasswordContent />
+      <ResetPasswordForm />
     </Suspense>
   );
 }
