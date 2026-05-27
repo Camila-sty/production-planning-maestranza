@@ -16,15 +16,13 @@ function translateUpdateError(message: string): string {
     return "Demasiados intentos. Espera unos minutos antes de volver a intentarlo.";
   }
   if (msg.includes("same password") || msg.includes("different from")) {
-    return "La nueva contraseña debe ser diferente a la actual.";
-  }
-  if (msg.includes("session") || msg.includes("not authenticated")) {
-    return "Sesión inválida o expirada. Solicita un nuevo enlace de recuperación.";
+    return "La nueva contraseña debe ser diferente a la anterior.";
   }
   return "Ocurrió un error al actualizar la contraseña. Intenta nuevamente.";
 }
 
-// Inner component that reads search params (must be inside Suspense)
+// ── Inner component — reads search params (requires Suspense boundary) ────────
+
 function ResetPasswordContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -38,13 +36,23 @@ function ResetPasswordContent() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    // If the callback route detected an invalid/expired code it appends ?error=link_invalido
-    if (searchParams.get("error") === "link_invalido") {
-      setPageState("invalid_link");
+    const code = searchParams.get("code");
+
+    if (code) {
+      // PKCE flow: Supabase redirected here with ?code=xxx
+      // Exchange the code for a session using the browser client
+      supabase.auth.exchangeCodeForSession(code).then(({ error: exchError }) => {
+        if (exchError) {
+          setPageState("invalid_link");
+        } else {
+          setPageState("ready");
+        }
+      });
       return;
     }
 
-    // Check for a valid session (set by /auth/callback after code exchange)
+    // No code — check if the user already has a valid session
+    // (e.g. they refreshed the page after a successful exchange)
     supabase.auth.getSession().then(({ data: { session } }) => {
       setPageState(session ? "ready" : "invalid_link");
     });
@@ -77,6 +85,18 @@ function ResetPasswordContent() {
     setTimeout(() => router.push("/auth/login"), 3000);
   }
 
+  // ── Loading ──────────────────────────────────────────────────────────────────
+  if (pageState === "loading") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-zinc-950">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-6 h-6 animate-spin text-zinc-600" />
+          <p className="text-sm text-zinc-600">Verificando enlace…</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-zinc-950 px-4">
       <div className="w-full max-w-sm">
@@ -88,24 +108,14 @@ function ResetPasswordContent() {
               ? "bg-red-500/10 border border-red-500/30"
               : "bg-amber-500/10 border border-amber-500/30"
           }`}>
-            {pageState === "loading" && (
-              <Loader2 className="w-6 h-6 animate-spin text-zinc-600" />
-            )}
-            {pageState === "invalid_link" && (
-              <AlertCircle className="w-6 h-6 text-red-400" />
-            )}
-            {(pageState === "ready" || pageState === "success") && (
-              <KeyRound className="w-6 h-6 text-amber-400" />
-            )}
+            {pageState === "invalid_link"
+              ? <AlertCircle className="w-6 h-6 text-red-400" />
+              : <KeyRound className="w-6 h-6 text-amber-400" />
+            }
           </div>
         </div>
 
-        {/* ── Loading ───────────────────────────────────────────────────────── */}
-        {pageState === "loading" && (
-          <p className="text-sm text-zinc-600 text-center">Verificando enlace…</p>
-        )}
-
-        {/* ── Invalid / expired link ─────────────────────────────────────────── */}
+        {/* ── Expired / invalid link ─────────────────────────────────────────── */}
         {pageState === "invalid_link" && (
           <>
             <h1 className="text-xl font-semibold text-white text-center mb-2">
@@ -113,13 +123,14 @@ function ResetPasswordContent() {
             </h1>
             <p className="text-sm text-zinc-500 text-center mb-8">
               Este enlace de recuperación ya no es válido. Los enlaces expiran
-              después de 1 hora.
+              después de 1 hora. Solicita uno nuevo desde la pantalla de inicio
+              de sesión.
             </p>
             <a
               href="/auth/login"
               className="block w-full text-center rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-sm font-medium py-2.5 transition-colors"
             >
-              Solicitar nuevo enlace
+              Volver al inicio de sesión
             </a>
           </>
         )}
@@ -130,7 +141,7 @@ function ResetPasswordContent() {
             <h1 className="text-xl font-semibold text-white text-center mb-4">
               Contraseña actualizada
             </h1>
-            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-4 text-sm text-emerald-400 text-center space-y-1">
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-4 text-sm text-emerald-400 text-center space-y-1.5">
               <p className="font-medium">Contraseña actualizada correctamente.</p>
               <p className="text-emerald-500/70">Ya puedes iniciar sesión. Redirigiendo…</p>
             </div>
@@ -149,12 +160,12 @@ function ResetPasswordContent() {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-1.5">
-                <Label htmlFor="password" className="text-zinc-300 text-sm">
+                <Label htmlFor="rp-password" className="text-zinc-300 text-sm">
                   Nueva contraseña
                 </Label>
                 <div className="relative">
                   <Input
-                    id="password"
+                    id="rp-password"
                     type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -174,11 +185,11 @@ function ResetPasswordContent() {
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="confirm" className="text-zinc-300 text-sm">
+                <Label htmlFor="rp-confirm" className="text-zinc-300 text-sm">
                   Confirmar contraseña
                 </Label>
                 <Input
-                  id="confirm"
+                  id="rp-confirm"
                   type={showPassword ? "text" : "password"}
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
@@ -216,10 +227,13 @@ function ResetPasswordContent() {
             </form>
           </>
         )}
+
       </div>
     </div>
   );
 }
+
+// ── Page export with Suspense boundary (required for useSearchParams) ─────────
 
 export default function ResetPasswordPage() {
   return (
