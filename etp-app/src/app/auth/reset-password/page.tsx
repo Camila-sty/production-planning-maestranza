@@ -42,7 +42,7 @@ function ResetPasswordForm() {
         } else if (msg.includes("session") || msg.includes("not authenticated") || msg.includes("jwt")) {
           setError("El enlace expiró o ya fue usado. Solicita uno nuevo desde el inicio de sesión.");
         } else {
-          setError("No se pudo actualizar la contraseña. Intenta nuevamente.");
+          setError("No se pudo actualizar la contraseña. Solicita un nuevo enlace de recuperación.");
         }
       } else {
         setSuccess(true);
