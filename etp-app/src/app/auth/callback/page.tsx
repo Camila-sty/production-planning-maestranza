@@ -1,35 +1,31 @@
 "use client";
 
-/**
- * Client-side PKCE callback page.
- *
- * Why client-side?
- * The PKCE code_verifier is stored by createBrowserClient in document.cookie.
- * exchangeCodeForSession reads it from that same storage. If we ran this
- * server-side the cookie might not be available or might not match the
- * in-browser storage that generated the challenge.
- *
- * Flow:
- *   Supabase email link → /auth/callback?code=xxx&next=/auth/reset-password
- *   → this page exchanges the code in the browser → redirect to next
- */
-
-import { Suspense, useEffect } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Loader2 } from "lucide-react";
+
+interface DiagInfo {
+  codePresent: boolean;
+  next: string;
+  verifierInLS: boolean;
+  verifierInCookie: boolean;
+  errorName: string;
+  errorMessage: string;
+}
 
 function CallbackContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
+  const [diag, setDiag] = useState<DiagInfo | null>(null);
 
   useEffect(() => {
     async function handleCallback() {
       const code = searchParams.get("code");
       const next = searchParams.get("next") ?? "/auth/reset-password";
 
-      // Supabase itself forwarded an error (e.g. otp_expired)
+      // Supabase forwarded an error directly (e.g. otp_expired)
       const supabaseError = searchParams.get("error");
       const errorCode     = searchParams.get("error_code");
       if (supabaseError) {
@@ -43,35 +39,76 @@ function CallbackContent() {
         return;
       }
 
-      // Diagnostic: inspect verifier storage
-      const verifierKey = `supabase.auth.token-code-verifier`;
-      const verifierFromLS = typeof localStorage !== "undefined" ? localStorage.getItem(verifierKey) : null;
-      const verifierFromCookie = typeof document !== "undefined"
-        ? document.cookie.split(";").find(c => c.trim().startsWith(verifierKey))
-        : null;
-      console.log("[callback] code present:", !!code);
-      console.log("[callback] next:", next);
-      console.log("[callback] verifier in localStorage:", !!verifierFromLS);
-      console.log("[callback] verifier in cookies:", !!verifierFromCookie);
-      console.log("[callback] all cookies:", typeof document !== "undefined" ? document.cookie : "n/a");
+      const verifierKey = "supabase.auth.token-code-verifier";
+      const verifierInLS =
+        typeof localStorage !== "undefined" && !!localStorage.getItem(verifierKey);
+      const verifierInCookie =
+        typeof document !== "undefined" &&
+        document.cookie.split(";").some((c) => c.trim().startsWith(verifierKey));
 
       try {
         const { error } = await supabase.auth.exchangeCodeForSession(code);
         if (error) {
-          console.error("[callback] exchangeCodeForSession error — name:", error.name, "message:", error.message);
-          router.replace("/auth/login?error=otro_navegador");
+          setDiag({
+            codePresent: true,
+            next,
+            verifierInLS,
+            verifierInCookie,
+            errorName: error.name,
+            errorMessage: error.message,
+          });
         } else {
           router.replace(next);
         }
       } catch (e) {
-        console.error("[callback] unexpected error:", e);
-        router.replace("/auth/login?error=otro_navegador");
+        const err = e as Error;
+        setDiag({
+          codePresent: true,
+          next,
+          verifierInLS,
+          verifierInCookie,
+          errorName: err?.name ?? "UnknownError",
+          errorMessage: err?.message ?? String(e),
+        });
       }
     }
 
     handleCallback();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  if (diag) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-zinc-950 px-4">
+        <div className="w-full max-w-md space-y-4">
+          <h1 className="text-lg font-semibold text-red-400">Error en callback — diagnóstico</h1>
+          <table className="w-full text-sm border-collapse">
+            <tbody>
+              {[
+                ["code recibido", diag.codePresent ? "✓ sí" : "✗ no"],
+                ["next", diag.next],
+                ["code_verifier en localStorage", diag.verifierInLS ? "✓ sí" : "✗ no"],
+                ["code_verifier en cookies", diag.verifierInCookie ? "✓ sí" : "✗ no"],
+                ["error.name", diag.errorName],
+                ["error.message", diag.errorMessage],
+              ].map(([label, value]) => (
+                <tr key={label} className="border-b border-zinc-800">
+                  <td className="py-2 pr-4 text-zinc-500 whitespace-nowrap align-top">{label}</td>
+                  <td className="py-2 text-zinc-200 break-all font-mono">{value}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <a
+            href="/auth/login"
+            className="block text-center text-xs text-zinc-600 hover:text-zinc-400 transition-colors pt-2"
+          >
+            Volver al inicio de sesión
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-zinc-950">
