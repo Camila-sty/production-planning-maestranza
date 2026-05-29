@@ -1,5 +1,7 @@
 import { AuthForm } from "@/components/auth/auth-form";
 
+export const dynamic = "force-dynamic";
+
 const equipoImages = [
   "/images/equipos/equipo-1.jpeg",
   "/images/equipos/equipo-2.jpeg",
@@ -9,9 +11,22 @@ const equipoImages = [
   "/images/equipos/equipo-6.jpeg",
 ];
 
-export default function LoginPage() {
+const ERROR_MESSAGES: Record<string, string> = {
+  otp_expirado:   "El enlace de recuperación expiró. Solicita uno nuevo.",
+  otro_navegador: "El enlace expiró o fue abierto en otro navegador. Solicita uno nuevo y ábrelo en el mismo navegador donde hiciste la solicitud.",
+  link_invalido:  "El enlace de recuperación no es válido. Solicita uno nuevo.",
+};
+
+export default function LoginPage({
+  searchParams,
+}: {
+  searchParams: Record<string, string | string[] | undefined>;
+}) {
   const isDev = process.env.DEV_AUTH === "true";
   const allowRegister = process.env.ALLOW_PUBLIC_REGISTER !== "false";
+
+  const errorKey = typeof searchParams.error === "string" ? searchParams.error : undefined;
+  const errorMessage = errorKey ? (ERROR_MESSAGES[errorKey] ?? undefined) : undefined;
 
   return (
     <div className="min-h-screen flex bg-zinc-950">
@@ -74,7 +89,7 @@ export default function LoginPage() {
 
       {/* ── RIGHT PANEL: full-height auth panel ─────────────────── */}
       <div className="w-full lg:w-[480px] xl:w-[520px] flex flex-col bg-zinc-950 relative z-10 border-l border-zinc-800/60">
-        <AuthForm isDev={isDev} allowRegister={allowRegister} />
+        <AuthForm isDev={isDev} allowRegister={allowRegister} errorMessage={errorMessage} />
       </div>
 
     </div>

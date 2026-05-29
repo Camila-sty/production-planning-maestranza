@@ -20,19 +20,20 @@ export async function GET(request: Request) {
   // Supabase itself reported an error (e.g. otp_expired, access_denied)
   if (error) {
     const isExpired = errorCode === "otp_expired";
-    const msg = isExpired ? "link_expirado" : "link_invalido";
+    const msg = isExpired ? "otp_expirado" : "link_invalido";
     return NextResponse.redirect(`${origin}/auth/login?error=${msg}`);
   }
 
-  // Exchange the PKCE code for a session (server-side, no PKCE verifier needed)
+  // Exchange the PKCE code for a session (server-side)
   if (code) {
     const supabase = await createClient();
     const { error: exchError } = await supabase.auth.exchangeCodeForSession(code);
     if (!exchError) {
       return NextResponse.redirect(`${origin}${next}`);
     }
-    // Exchange failed (code already used, network error, etc.)
-    return NextResponse.redirect(`${origin}/auth/login?error=link_invalido`);
+    // Exchange failed — most likely the link was opened in a different browser
+    // than the one that initiated the recovery request (PKCE code_verifier mismatch)
+    return NextResponse.redirect(`${origin}/auth/login?error=otro_navegador`);
   }
 
   // No code and no error — unexpected, send to login

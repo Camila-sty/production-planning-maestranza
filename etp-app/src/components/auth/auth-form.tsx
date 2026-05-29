@@ -20,11 +20,12 @@ import { toast } from "sonner";
 interface Props {
   isDev?: boolean;
   allowRegister?: boolean;
+  errorMessage?: string;
 }
 
-export function AuthForm({ isDev, allowRegister = true }: Props) {
+export function AuthForm({ isDev, allowRegister = true, errorMessage }: Props) {
   if (isDev) return <LocalAuthPanel allowRegister={allowRegister} />;
-  return <SupabaseAuthPanel allowRegister={allowRegister} />;
+  return <SupabaseAuthPanel allowRegister={allowRegister} errorMessage={errorMessage} />;
 }
 
 // ── Shared logo strip ─────────────────────────────────────────────────────────
@@ -340,7 +341,7 @@ function translateSupabaseError(message: string): string {
 
 // ── Supabase auth panel (production) ─────────────────────────────────────────
 
-function SupabaseAuthPanel({ allowRegister }: { allowRegister: boolean }) {
+function SupabaseAuthPanel({ allowRegister, errorMessage }: { allowRegister: boolean; errorMessage?: string }) {
   const [mode, setMode] = useState<"login" | "signup" | "forgot">("login");
   const [email, setEmail]       = useState("");
   const [name, setName]         = useState("");
@@ -396,7 +397,7 @@ function SupabaseAuthPanel({ allowRegister }: { allowRegister: boolean }) {
           redirectTo: `${siteUrl}/auth/callback?next=/auth/reset-password`,
         });
         if (error) { setServerError(translateSupabaseError(error.message)); return; }
-        setSuccessMsg("Revisa tu correo. Te enviamos un enlace para restablecer tu contraseña.");
+        setSuccessMsg("Revisa tu correo. Te enviamos un enlace para restablecer tu contraseña. Importante: ábrelo en el mismo navegador donde hiciste esta solicitud.");
       }
     } finally {
       setLoading(false);
@@ -441,6 +442,13 @@ function SupabaseAuthPanel({ allowRegister }: { allowRegister: boolean }) {
             >
               Crear cuenta
             </button>
+          </div>
+        )}
+
+        {/* Error banner from callback redirect (e.g. link expired, wrong browser) */}
+        {errorMessage && !successMsg && (
+          <div className="mb-5 max-w-sm text-sm text-red-400 bg-red-950/40 border border-red-900/50 rounded-lg px-3 py-2.5">
+            {errorMessage}
           </div>
         )}
 
