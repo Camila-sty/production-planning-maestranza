@@ -43,10 +43,22 @@ function CallbackContent() {
         return;
       }
 
+      // Diagnostic: inspect verifier storage
+      const verifierKey = `supabase.auth.token-code-verifier`;
+      const verifierFromLS = typeof localStorage !== "undefined" ? localStorage.getItem(verifierKey) : null;
+      const verifierFromCookie = typeof document !== "undefined"
+        ? document.cookie.split(";").find(c => c.trim().startsWith(verifierKey))
+        : null;
+      console.log("[callback] code present:", !!code);
+      console.log("[callback] next:", next);
+      console.log("[callback] verifier in localStorage:", !!verifierFromLS);
+      console.log("[callback] verifier in cookies:", !!verifierFromCookie);
+      console.log("[callback] all cookies:", typeof document !== "undefined" ? document.cookie : "n/a");
+
       try {
         const { error } = await supabase.auth.exchangeCodeForSession(code);
         if (error) {
-          console.error("[callback] exchangeCodeForSession error:", error.message, error.name);
+          console.error("[callback] exchangeCodeForSession error — name:", error.name, "message:", error.message);
           router.replace("/auth/login?error=otro_navegador");
         } else {
           router.replace(next);
