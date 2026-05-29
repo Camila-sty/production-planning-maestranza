@@ -393,9 +393,13 @@ function SupabaseAuthPanel({ allowRegister, errorMessage }: { allowRegister: boo
 
       } else {
         const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? window.location.origin;
-        const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: `${siteUrl}/auth/callback?next=/auth/reset-password`,
-        });
+        const redirectTo = `${siteUrl}/auth/callback?next=/auth/reset-password`;
+        // DIAGNOSTIC LOG (temporary)
+        console.log("[forgot] NEXT_PUBLIC_SITE_URL:", process.env.NEXT_PUBLIC_SITE_URL);
+        console.log("[forgot] window.location.origin:", window.location.origin);
+        console.log("[forgot] redirectTo:", redirectTo);
+        const { error, data } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+        console.log("[forgot] resetPasswordForEmail result — error:", error?.message ?? "none", "data:", data);
         if (error) { setServerError(translateSupabaseError(error.message)); return; }
         setSuccessMsg("Revisa tu correo. Te enviamos un enlace para restablecer tu contraseña. Importante: ábrelo en el mismo navegador donde hiciste esta solicitud.");
       }
