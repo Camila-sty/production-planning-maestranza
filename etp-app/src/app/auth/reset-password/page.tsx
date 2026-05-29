@@ -1,23 +1,55 @@
 "use client";
 
 import { Suspense, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Eye, EyeOff, KeyRound, Loader2 } from "lucide-react";
+import { Eye, EyeOff, KeyRound, Loader2, AlertCircle } from "lucide-react";
 
-function ResetPasswordForm() {
+// ── Inner component (needs Suspense for useSearchParams) ──────────────────────
+
+function ResetPasswordContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
 
   const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
+  const [confirm, setConfirm]   = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting]     = useState(false);
+  const [error, setError]   = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+
+  // If Supabase redirected here directly with an error (e.g. old link, wrong
+  // redirectTo config), show a clear message instead of a form that won't work.
+  const urlError = searchParams.get("error") ?? searchParams.get("error_code");
+  if (urlError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-zinc-950 px-4">
+        <div className="w-full max-w-sm text-center">
+          <div className="flex justify-center mb-6">
+            <div className="w-12 h-12 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center justify-center">
+              <AlertCircle className="w-6 h-6 text-red-400" />
+            </div>
+          </div>
+          <h1 className="text-xl font-semibold text-white mb-2">
+            Enlace inválido o expirado
+          </h1>
+          <p className="text-sm text-zinc-500 mb-8">
+            El enlace de recuperación no es válido o ya expiró. Solicita uno nuevo desde el inicio de sesión.
+          </p>
+          <a
+            href="/auth/login"
+            className="block w-full text-center rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-sm font-medium py-2.5 transition-colors"
+          >
+            Volver al inicio de sesión
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -163,6 +195,8 @@ function ResetPasswordForm() {
   );
 }
 
+// ── Page export — Suspense required for useSearchParams ───────────────────────
+
 export default function ResetPasswordPage() {
   return (
     <Suspense fallback={
@@ -170,7 +204,7 @@ export default function ResetPasswordPage() {
         <Loader2 className="w-6 h-6 animate-spin text-zinc-600" />
       </div>
     }>
-      <ResetPasswordForm />
+      <ResetPasswordContent />
     </Suspense>
   );
 }
