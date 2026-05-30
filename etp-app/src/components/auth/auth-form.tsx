@@ -400,6 +400,18 @@ function SupabaseAuthPanel({ allowRegister, errorMessage }: { allowRegister: boo
         console.log("[forgot] redirectTo:", redirectTo);
         const { error, data } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
         console.log("[forgot] resetPasswordForEmail result — error:", error?.message ?? "none", "data:", data);
+        // Diagnostic: confirm verifier was stored after the call
+        const verifierCookie = typeof document !== "undefined"
+          ? document.cookie.split(";").find(c => c.trim().startsWith("supabase.auth.token-code-verifier"))
+          : null;
+        const verifierLS = typeof localStorage !== "undefined"
+          ? localStorage.getItem("supabase.auth.token-code-verifier")
+          : null;
+        console.log("[forgot] verifier in cookie after call:", !!verifierCookie);
+        console.log("[forgot] verifier in localStorage after call:", !!verifierLS);
+        console.log("[forgot] all cookie names:", typeof document !== "undefined"
+          ? document.cookie.split(";").map(c => c.split("=")[0].trim()).join(", ")
+          : "n/a");
         if (error) { setServerError(translateSupabaseError(error.message)); return; }
         setSuccessMsg("Revisa tu correo. Te enviamos un enlace para restablecer tu contraseña. Importante: ábrelo en el mismo navegador donde hiciste esta solicitud.");
       }
