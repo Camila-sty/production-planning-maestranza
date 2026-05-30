@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { createPkceClient, ssBrowserStorage, VERIFIER_KEY } from "@/lib/supabase/pkce-client";
+import { createClient } from "@/lib/supabase/client";
+import { ssBrowserStorage, VERIFIER_KEY } from "@/lib/supabase/pkce-client";
 import { localLogin, localRegister } from "@/actions/auth";
 import {
   localLoginSchema,
@@ -350,7 +351,7 @@ function SupabaseAuthPanel({ allowRegister, errorMessage }: { allowRegister: boo
   const [serverError, setServerError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg]   = useState<string | null>(null);
   const router = useRouter();
-  const supabase = createPkceClient();
+  const supabase = createClient();
 
   function switchMode(next: "login" | "signup" | "forgot") {
     setMode(next);
