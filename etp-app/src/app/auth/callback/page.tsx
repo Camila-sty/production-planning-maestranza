@@ -3,75 +3,28 @@
 /**
  * PKCE callback page — manual exchange, no detectSessionInUrl.
  *
- * createBrowserClient from @supabase/ssr hardcodes detectSessionInUrl:isBrowser()
- * which cannot be overridden. If we also call exchangeCodeForSession manually,
- * the auto-exchange runs first, consumes the code+verifier, and our call gets
- * AuthPKCECodeVerifierMissingError.
+ * Uses the same createPkceClient / ssBrowserStorage as auth-form.tsx so the
+ * code_verifier written during resetPasswordForEmail is readable here with the
+ * same cookie format and storage key.
  *
- * Fix: use @supabase/supabase-js createClient directly with detectSessionInUrl:false
- * and a cookie storage adapter compatible with createBrowserClient's base64url
- * encoding so the verifier written on /auth/login is readable here.
+ * detectSessionInUrl:false prevents the automatic exchange that would consume
+ * the verifier before our single explicit exchangeCodeForSession call.
  */
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
-import { stringFromBase64URL, stringToBase64URL } from "@supabase/ssr";
+import { createPkceClient, ssBrowserStorage, VERIFIER_KEY } from "@/lib/supabase/pkce-client";
 import { Loader2 } from "lucide-react";
-
-// ── Cookie storage compatible with @supabase/ssr createBrowserClient ──────────
-
-const BASE64_PREFIX = "base64-";
-const VERIFIER_KEY  = "supabase.auth.token-code-verifier";
-const MAX_AGE       = 400 * 24 * 60 * 60; // 400 days
 
 function parseCookies(): Record<string, string> {
   if (typeof document === "undefined") return {};
-  const result: Record<string, string> = {};
+  const out: Record<string, string> = {};
   for (const c of document.cookie.split(";")) {
     const idx = c.indexOf("=");
     if (idx < 0) continue;
-    result[c.slice(0, idx).trim()] = c.slice(idx + 1).trim();
+    out[c.slice(0, idx).trim()] = c.slice(idx + 1).trim();
   }
-  return result;
-}
-
-const ssBrowserStorage = {
-  getItem(key: string): string | null {
-    const raw = parseCookies()[key];
-    if (raw == null) return null;
-    if (raw.startsWith(BASE64_PREFIX)) {
-      return stringFromBase64URL(raw.slice(BASE64_PREFIX.length));
-    }
-    return raw;
-  },
-  setItem(key: string, value: string): void {
-    if (typeof document === "undefined") return;
-    const encoded = BASE64_PREFIX + stringToBase64URL(value);
-    document.cookie = `${key}=${encoded}; path=/; SameSite=lax; Secure; Max-Age=${MAX_AGE}`;
-  },
-  removeItem(key: string): void {
-    if (typeof document === "undefined") return;
-    document.cookie = `${key}=; path=/; SameSite=lax; Secure; Max-Age=0`;
-  },
-};
-
-/** One-off client with detectSessionInUrl:false — NOT the createBrowserClient singleton. */
-function createCallbackClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      auth: {
-        flowType: "pkce",
-        detectSessionInUrl: false,
-        persistSession: true,
-        storage: ssBrowserStorage,
-        storageKey: "supabase.auth.token",
-        autoRefreshToken: false,
-      },
-    }
-  );
+  return out;
 }
 
 // ── Diagnostic types ──────────────────────────────────────────────────────────
@@ -111,14 +64,14 @@ function CallbackContent() {
         return;
       }
 
-      // Pre-exchange diagnostics
-      const cookies       = parseCookies();
-      const cookieNames   = Object.keys(cookies);
-      const verifierInCookie = VERIFIER_KEY in cookies;
-      const verifierInLS     =
+      // Pre-exchange diagnostics — collected before the call
+      const cookies         = parseCookies();
+      const cookieNames     = Object.keys(cookies);
+      const verifierInCookie = !!ssBrowserStorage.getItem(VERIFIER_KEY);
+      const verifierInLS    =
         typeof localStorage !== "undefined" && !!localStorage.getItem(VERIFIER_KEY);
 
-      const supabase = createCallbackClient();
+      const supabase = createPkceClient();
 
       try {
         const { error } = await supabase.auth.exchangeCodeForSession(code);
@@ -147,15 +100,15 @@ function CallbackContent() {
           <table className="w-full text-sm border-collapse">
             <tbody>
               {([
-                ["code recibido",      diag.codePresent       ? "✓ sí" : "✗ no"],
-                ["next",               diag.next],
-                ["verifier en cookie", diag.verifierInCookie  ? "✓ sí" : "✗ no"],
-                ["verifier en localStorage", diag.verifierInLS ? "✓ sí" : "✗ no"],
-                ["cookies presentes",  diag.cookieNames.length > 0
+                ["code recibido",           diag.codePresent      ? "✓ sí" : "✗ no"],
+                ["next",                    diag.next],
+                ["verifier en cookie",      diag.verifierInCookie ? "✓ sí" : "✗ no"],
+                ["verifier en localStorage",diag.verifierInLS     ? "✓ sí" : "✗ no"],
+                ["cookies presentes",       diag.cookieNames.length > 0
                   ? diag.cookieNames.join(", ")
                   : "(ninguna)"],
-                ["error.name",         diag.errorName],
-                ["error.message",      diag.errorMessage],
+                ["error.name",              diag.errorName],
+                ["error.message",           diag.errorMessage],
               ] as [string, string][]).map(([label, value]) => (
                 <tr key={label} className="border-b border-zinc-800">
                   <td className="py-2 pr-4 text-zinc-500 whitespace-nowrap align-top">{label}</td>

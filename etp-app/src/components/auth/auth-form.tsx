@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { createClient } from "@/lib/supabase/client";
+import { createPkceClient, ssBrowserStorage, VERIFIER_KEY } from "@/lib/supabase/pkce-client";
 import { localLogin, localRegister } from "@/actions/auth";
 import {
   localLoginSchema,
@@ -350,7 +350,7 @@ function SupabaseAuthPanel({ allowRegister, errorMessage }: { allowRegister: boo
   const [serverError, setServerError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg]   = useState<string | null>(null);
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = createPkceClient();
 
   function switchMode(next: "login" | "signup" | "forgot") {
     setMode(next);
@@ -392,28 +392,29 @@ function SupabaseAuthPanel({ allowRegister, errorMessage }: { allowRegister: boo
         setSuccessMsg("Cuenta creada correctamente. Revisa tu correo para confirmar la cuenta.");
 
       } else {
-        const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? window.location.origin;
-        const redirectTo = `${siteUrl}/auth/callback?next=/auth/reset-password`;
-        // DIAGNOSTIC LOG (temporary)
-        console.log("[forgot] NEXT_PUBLIC_SITE_URL:", process.env.NEXT_PUBLIC_SITE_URL);
-        console.log("[forgot] window.location.origin:", window.location.origin);
+        // Always use the current origin so the callback URL matches the domain
+        // where the cookie is stored. Using NEXT_PUBLIC_SITE_URL can cause a
+        // cross-domain mismatch where the verifier cookie is invisible.
+        const redirectTo = `${window.location.origin}/auth/callback?next=/auth/reset-password`;
         console.log("[forgot] redirectTo:", redirectTo);
-        const { error, data } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
-        console.log("[forgot] resetPasswordForEmail result — error:", error?.message ?? "none", "data:", data);
-        // Diagnostic: confirm verifier was stored after the call
-        const verifierCookie = typeof document !== "undefined"
-          ? document.cookie.split(";").find(c => c.trim().startsWith("supabase.auth.token-code-verifier"))
-          : null;
-        const verifierLS = typeof localStorage !== "undefined"
-          ? localStorage.getItem("supabase.auth.token-code-verifier")
-          : null;
-        console.log("[forgot] verifier in cookie after call:", !!verifierCookie);
-        console.log("[forgot] verifier in localStorage after call:", !!verifierLS);
-        console.log("[forgot] all cookie names:", typeof document !== "undefined"
-          ? document.cookie.split(";").map(c => c.split("=")[0].trim()).join(", ")
-          : "n/a");
+
+        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+
+        // Verify verifier was stored immediately after the call
+        const verifierStored = !!ssBrowserStorage.getItem(VERIFIER_KEY);
+        const cookieNames = typeof document !== "undefined"
+          ? document.cookie.split(";").map(c => c.split("=")[0].trim()).filter(Boolean).join(", ")
+          : "n/a";
+        console.log("[forgot] verifier stored:", verifierStored, "— all cookies:", cookieNames);
+
         if (error) { setServerError(translateSupabaseError(error.message)); return; }
-        setSuccessMsg("Revisa tu correo. Te enviamos un enlace para restablecer tu contraseña. Importante: ábrelo en el mismo navegador donde hiciste esta solicitud.");
+
+        setSuccessMsg(
+          verifierStored
+            ? "Revisa tu correo. Te enviamos el enlace de recuperación. Ábrelo en este mismo navegador."
+            : "Correo enviado, pero no se pudo guardar el PKCE localmente. " +
+              "Puede que el link no funcione. Asegúrate de no tener cookies bloqueadas."
+        );
       }
     } finally {
       setLoading(false);

@@ -5,10 +5,14 @@ export function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      cookieOptions: {
-        path: "/",
-        sameSite: "lax",
-        secure: true,
+      // No explicit cookieOptions — DEFAULT_COOKIE_OPTIONS (path="/", sameSite="lax",
+      // no Secure) ensures the cookie works on both HTTP dev and HTTPS production.
+      // Adding secure:true caused silent Set-Cookie failures in some contexts.
+      auth: {
+        flowType: "pkce",
+        detectSessionInUrl: true,
+        persistSession: true,
+        autoRefreshToken: true,
       },
     }
   );
