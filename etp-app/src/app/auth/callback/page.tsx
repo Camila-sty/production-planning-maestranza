@@ -1,5 +1,22 @@
 "use client";
 
+/**
+ * PKCE callback page.
+ *
+ * createBrowserClient sets flowType:"pkce" and detectSessionInUrl:true.
+ * On initialization the client automatically calls exchangeCodeForSession
+ * when it detects ?code= in the URL (_initialize → _getSessionFromURL).
+ *
+ * We must NOT call exchangeCodeForSession manually — that would be a
+ * second attempt after the code/verifier are already consumed, causing
+ * AuthPKCECodeVerifierMissingError.
+ *
+ * Correct approach:
+ *   1. await supabase.auth.initialize() — waits for the auto-exchange to finish
+ *   2. getSession() — reads the result
+ *   3. redirect to `next` if session exists, otherwise show diagnostic
+ */
+
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -8,8 +25,7 @@ import { Loader2 } from "lucide-react";
 interface DiagInfo {
   codePresent: boolean;
   next: string;
-  verifierInLS: boolean;
-  verifierInCookie: boolean;
+  sessionAfterInit: boolean;
   errorName: string;
   errorMessage: string;
 }
@@ -39,36 +55,21 @@ function CallbackContent() {
         return;
       }
 
-      const verifierKey = "supabase.auth.token-code-verifier";
-      const verifierInLS =
-        typeof localStorage !== "undefined" && !!localStorage.getItem(verifierKey);
-      const verifierInCookie =
-        typeof document !== "undefined" &&
-        document.cookie.split(";").some((c) => c.trim().startsWith(verifierKey));
+      // Wait for the auto-exchange triggered by detectSessionInUrl to complete.
+      // initializePromise is idempotent: if already done, returns immediately.
+      await supabase.auth.initialize();
 
-      try {
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
-        if (error) {
-          setDiag({
-            codePresent: true,
-            next,
-            verifierInLS,
-            verifierInCookie,
-            errorName: error.name,
-            errorMessage: error.message,
-          });
-        } else {
-          router.replace(next);
-        }
-      } catch (e) {
-        const err = e as Error;
+      const { data: { session }, error } = await supabase.auth.getSession();
+
+      if (session) {
+        router.replace(next);
+      } else {
         setDiag({
           codePresent: true,
           next,
-          verifierInLS,
-          verifierInCookie,
-          errorName: err?.name ?? "UnknownError",
-          errorMessage: err?.message ?? String(e),
+          sessionAfterInit: false,
+          errorName: error?.name ?? "NoSession",
+          errorMessage: error?.message ?? "No se pudo establecer la sesión desde el enlace de recuperación",
         });
       }
     }
@@ -87,8 +88,7 @@ function CallbackContent() {
               {[
                 ["code recibido", diag.codePresent ? "✓ sí" : "✗ no"],
                 ["next", diag.next],
-                ["code_verifier en localStorage", diag.verifierInLS ? "✓ sí" : "✗ no"],
-                ["code_verifier en cookies", diag.verifierInCookie ? "✓ sí" : "✗ no"],
+                ["sesión tras init", diag.sessionAfterInit ? "✓ sí" : "✗ no"],
                 ["error.name", diag.errorName],
                 ["error.message", diag.errorMessage],
               ].map(([label, value]) => (
