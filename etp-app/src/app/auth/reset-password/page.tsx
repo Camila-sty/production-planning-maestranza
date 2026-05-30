@@ -1,31 +1,95 @@
 "use client";
 
-import { Suspense, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { createImplicitClient } from "@/lib/supabase/implicit-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Eye, EyeOff, KeyRound, Loader2, AlertCircle } from "lucide-react";
 
-// ── Inner component (needs Suspense for useSearchParams) ──────────────────────
+type Status = "loading" | "ready" | "link-error" | "success";
 
-function ResetPasswordContent() {
+export default function ResetPasswordPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const supabase = createClient();
+  const supabase = useRef(createImplicitClient()).current;
 
-  const [password, setPassword] = useState("");
-  const [confirm, setConfirm]   = useState("");
+  const [status, setStatus]           = useState<Status>("loading");
+  const [password, setPassword]       = useState("");
+  const [confirm, setConfirm]         = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [submitting, setSubmitting]     = useState(false);
-  const [error, setError]   = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const [submitting, setSubmitting]   = useState(false);
+  const [formError, setFormError]     = useState<string | null>(null);
 
-  // If Supabase redirected here directly with an error (e.g. old link, wrong
-  // redirectTo config), show a clear message instead of a form that won't work.
-  const urlError = searchParams.get("error") ?? searchParams.get("error_code");
-  if (urlError) {
+  // Parse the recovery tokens from the URL hash on mount.
+  // Supabase implicit flow delivers: #access_token=…&refresh_token=…&type=recovery
+  useEffect(() => {
+    const hash   = typeof window !== "undefined" ? window.location.hash.slice(1) : "";
+    const params = new URLSearchParams(hash);
+    const accessToken  = params.get("access_token");
+    const refreshToken = params.get("refresh_token");
+    const type         = params.get("type");
+
+    if (type !== "recovery" || !accessToken || !refreshToken) {
+      setStatus("link-error");
+      return;
+    }
+
+    supabase.auth
+      .setSession({ access_token: accessToken, refresh_token: refreshToken })
+      .then(({ error }) => setStatus(error ? "link-error" : "ready"));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setFormError(null);
+
+    if (password.length < 8) {
+      setFormError("La contraseña debe tener al menos 8 caracteres.");
+      return;
+    }
+    if (password !== confirm) {
+      setFormError("Las contraseñas no coinciden.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) {
+        const msg = error.message.toLowerCase();
+        if (msg.includes("same password") || msg.includes("different from")) {
+          setFormError("La nueva contraseña debe ser diferente a la anterior.");
+        } else if (msg.includes("session") || msg.includes("not authenticated") || msg.includes("jwt")) {
+          setFormError("El enlace expiró o ya fue usado. Solicita uno nuevo desde el inicio de sesión.");
+        } else {
+          setFormError("No se pudo actualizar la contraseña. Solicita un nuevo enlace.");
+        }
+      } else {
+        setStatus("success");
+        setTimeout(() => router.push("/auth/login"), 2500);
+      }
+    } catch {
+      setFormError("Error de red. Verifica tu conexión e intenta nuevamente.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // ── Loading ────────────────────────────────────────────────────────────────
+
+  if (status === "loading") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-zinc-950">
+        <Loader2 className="w-6 h-6 animate-spin text-zinc-600" />
+      </div>
+    );
+  }
+
+  // ── Link error ─────────────────────────────────────────────────────────────
+
+  if (status === "link-error") {
     return (
       <div className="min-h-screen flex items-center justify-center bg-zinc-950 px-4">
         <div className="w-full max-w-sm text-center">
@@ -51,43 +115,9 @@ function ResetPasswordContent() {
     );
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
+  // ── Success ────────────────────────────────────────────────────────────────
 
-    if (password.length < 8) {
-      setError("La contraseña debe tener al menos 8 caracteres.");
-      return;
-    }
-    if (password !== confirm) {
-      setError("Las contraseñas no coinciden.");
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const { error: updateError } = await supabase.auth.updateUser({ password });
-      if (updateError) {
-        const msg = updateError.message.toLowerCase();
-        if (msg.includes("same password") || msg.includes("different from")) {
-          setError("La nueva contraseña debe ser diferente a la anterior.");
-        } else if (msg.includes("session") || msg.includes("not authenticated") || msg.includes("jwt")) {
-          setError("El enlace expiró o ya fue usado. Solicita uno nuevo desde el inicio de sesión.");
-        } else {
-          setError("No se pudo actualizar la contraseña. Solicita un nuevo enlace de recuperación.");
-        }
-      } else {
-        setSuccess(true);
-        setTimeout(() => router.push("/auth/login"), 2000);
-      }
-    } catch {
-      setError("Error de red. Verifica tu conexión e intenta nuevamente.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  if (success) {
+  if (status === "success") {
     return (
       <div className="min-h-screen flex items-center justify-center bg-zinc-950 px-4">
         <div className="w-full max-w-sm text-center">
@@ -105,6 +135,8 @@ function ResetPasswordContent() {
       </div>
     );
   }
+
+  // ── Form ───────────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-zinc-950 px-4">
@@ -164,9 +196,9 @@ function ResetPasswordContent() {
             />
           </div>
 
-          {error && (
+          {formError && (
             <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-md px-3 py-2">
-              {error}
+              {formError}
             </p>
           )}
 
@@ -192,19 +224,5 @@ function ResetPasswordContent() {
         </form>
       </div>
     </div>
-  );
-}
-
-// ── Page export — Suspense required for useSearchParams ───────────────────────
-
-export default function ResetPasswordPage() {
-  return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-zinc-950">
-        <Loader2 className="w-6 h-6 animate-spin text-zinc-600" />
-      </div>
-    }>
-      <ResetPasswordContent />
-    </Suspense>
   );
 }

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { createClient } from "@/lib/supabase/client";
-import { ssBrowserStorage, VERIFIER_KEY } from "@/lib/supabase/pkce-client";
+import { createImplicitClient } from "@/lib/supabase/implicit-client";
 import { localLogin, localRegister } from "@/actions/auth";
 import {
   localLoginSchema,
@@ -393,29 +393,11 @@ function SupabaseAuthPanel({ allowRegister, errorMessage }: { allowRegister: boo
         setSuccessMsg("Cuenta creada correctamente. Revisa tu correo para confirmar la cuenta.");
 
       } else {
-        // Always use the current origin so the callback URL matches the domain
-        // where the cookie is stored. Using NEXT_PUBLIC_SITE_URL can cause a
-        // cross-domain mismatch where the verifier cookie is invisible.
-        const redirectTo = `${window.location.origin}/auth/callback?next=/auth/reset-password`;
-        console.log("[forgot] redirectTo:", redirectTo);
-
-        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
-
-        // Verify verifier was stored immediately after the call
-        const verifierStored = !!ssBrowserStorage.getItem(VERIFIER_KEY);
-        const cookieNames = typeof document !== "undefined"
-          ? document.cookie.split(";").map(c => c.split("=")[0].trim()).filter(Boolean).join(", ")
-          : "n/a";
-        console.log("[forgot] verifier stored:", verifierStored, "— all cookies:", cookieNames);
-
+        const redirectTo = `${window.location.origin}/auth/reset-password`;
+        const implicitClient = createImplicitClient();
+        const { error } = await implicitClient.auth.resetPasswordForEmail(email, { redirectTo });
         if (error) { setServerError(translateSupabaseError(error.message)); return; }
-
-        setSuccessMsg(
-          verifierStored
-            ? "Revisa tu correo. Te enviamos el enlace de recuperación. Ábrelo en este mismo navegador."
-            : "Correo enviado, pero no se pudo guardar el PKCE localmente. " +
-              "Puede que el link no funcione. Asegúrate de no tener cookies bloqueadas."
-        );
+        setSuccessMsg("Revisa tu correo. Te enviamos el enlace de recuperación. Ábrelo en este mismo navegador.");
       }
     } finally {
       setLoading(false);
