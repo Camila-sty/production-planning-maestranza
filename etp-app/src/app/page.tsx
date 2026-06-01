@@ -4,17 +4,12 @@ import { getUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { PlanningForm } from "@/components/planning/planning-form";
 import { PlanningTable } from "@/components/planning/planning-table";
-import { ProcessCapacityTable } from "@/components/planning/process-capacity-table";
-import { LeadTimeTable } from "@/components/planning/lead-time-table";
 import { PlanButton } from "@/components/planning/plan-button";
 import { OptimizedTable } from "@/components/planning/optimized-table";
 import { SpecialDaysPanel } from "@/components/planning/special-days-panel";
-import { UsersPanel } from "@/components/admin/users-panel";
-import { logout } from "@/actions/auth";
-import { Button } from "@/components/ui/button";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { AppHeader } from "@/components/layout/app-header";
 import { ThemedToaster } from "@/components/themed-toaster";
-import type { SalesPlanning, LeadTimeByCode, ProcessCapacity, OptimizedResult, SpecialWorkingDay, PlanRunHistoryEntry } from "@/types";
+import type { SalesPlanning, OptimizedResult, SpecialWorkingDay, PlanRunHistoryEntry } from "@/types";
 
 export const dynamic = "force-dynamic";
 
@@ -29,10 +24,8 @@ export default async function HomePage() {
     prisma.planningRun.findFirst({ where: { status: "PREVIOUS" } }),
   ]);
 
-  const [records, processCapacities, leadTimes, optimizedRaw, specialDays, allOptimized] = await Promise.all([
+  const [records, optimizedRaw, specialDays, allOptimized] = await Promise.all([
     prisma.salesPlanning.findMany({ orderBy: { created_at: "asc" } }),
-    prisma.processCapacity.findMany({ orderBy: { orden: "asc" } }),
-    prisma.leadTimeByCode.findMany({ orderBy: [{ codigo_plazo: "asc" }, { proceso: "asc" }] }),
     activeRun
       ? prisma.salesPlanningOptimized.findMany({
           where: { planning_run_id: activeRun.id, start_date: { not: null } },
@@ -45,7 +38,6 @@ export default async function HomePage() {
           include: { sales_planning: true },
         }),
     prisma.specialWorkingDay.findMany({ orderBy: { date: "asc" } }),
-    // All optimized records with run info — for entrega estimada + history tooltip
     prisma.salesPlanningOptimized.findMany({
       where: { start_date: { not: null } },
       orderBy: { created_at: "asc" },
@@ -64,7 +56,7 @@ export default async function HomePage() {
     }
   }
 
-  // Build historyMap: salesPlanningId → [{runDate, endDate, version}] sorted oldest→newest
+  // Build historyMap: salesPlanningId → [{runDate, endDate, version}]
   const historyMap: Record<string, PlanRunHistoryEntry[]> = {};
   for (const o of allOptimized) {
     const sid = o.sales_planning_id;
@@ -81,48 +73,7 @@ export default async function HomePage() {
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
       <ThemedToaster />
-
-      {/* Header */}
-      <header className="border-b border-zinc-800/80 bg-zinc-900/60 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-[1600px] mx-auto px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="bg-white rounded-md px-2 py-1 shadow shadow-black/30">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/images/logos/logo-etp-equipos.jpeg" alt="ETP Equipos" className="h-7 w-auto object-contain" />
-            </div>
-            <div className="w-px h-7 bg-zinc-700" />
-            <div className="bg-white rounded-md px-2 py-1 shadow shadow-black/30">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/images/logos/logo-centro-equipos.jpeg" alt="Centro Equipos" className="h-7 w-auto object-contain" />
-            </div>
-            <div>
-              <h1 className="text-sm font-semibold text-white leading-none">
-                Sistema de Planificación
-              </h1>
-              <p className="text-xs text-zinc-500 mt-0.5">Producción de Equipos</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-zinc-500 hidden sm:block">{user.email}</span>
-            {isAdmin && (
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-amber-500 bg-amber-500/10 border border-amber-500/30 rounded px-1.5 py-0.5 hidden sm:block">
-                Admin
-              </span>
-            )}
-            <ThemeToggle />
-            <form action={logout}>
-              <Button
-                type="submit"
-                variant="ghost"
-                size="sm"
-                className="text-zinc-500 hover:text-white hover:bg-zinc-800 text-xs"
-              >
-                Cerrar sesión
-              </Button>
-            </form>
-          </div>
-        </div>
-      </header>
+      <AppHeader user={user} />
 
       <main className="max-w-[1600px] mx-auto px-6 py-8 space-y-10">
 
@@ -136,9 +87,7 @@ export default async function HomePage() {
 
         {/* ── 2. Historial ── */}
         <section>
-          <div className="flex items-center justify-between mb-4">
-            <SectionTitle count={records.length}>Historial de Planificación</SectionTitle>
-          </div>
+          <SectionTitle count={records.length}>Historial de Planificación</SectionTitle>
           <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5">
             <PlanningTable
               records={records as unknown as SalesPlanning[]}
@@ -197,51 +146,6 @@ export default async function HomePage() {
             )}
           </div>
         </section>
-
-        {/* ── 4. Capacidad por Proceso — admin only ── */}
-        {isAdmin && (
-          <section>
-            <SectionTitle count={processCapacities.length}>Capacidad por Proceso</SectionTitle>
-            <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5">
-              <p className="text-xs text-zinc-500 mb-3">
-                Define el orden global de procesos y cuántos equipos pueden estar simultáneamente en cada proceso (días hábiles).
-                Procesos con orden=0 o capacidad=0 son ignorados por el planificador.
-              </p>
-              <ProcessCapacityTable records={processCapacities as unknown as ProcessCapacity[]} isAdmin={isAdmin} />
-            </div>
-          </section>
-        )}
-
-        {/* ── 5. Tiempos por Código Plazo — admin only ── */}
-        {isAdmin && (
-          <section>
-            <SectionTitle count={leadTimes.length}>Tiempos por Código Plazo</SectionTitle>
-            <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5">
-              <p className="text-xs text-zinc-500 mb-3">
-                Duración en días hábiles de cada proceso según el tipo de equipo (código plazo).
-                Filas con duración=0 son ignoradas por el planificador.
-              </p>
-              <LeadTimeTable
-                records={leadTimes as unknown as LeadTimeByCode[]}
-                processes={processCapacities as unknown as ProcessCapacity[]}
-                isAdmin={isAdmin}
-              />
-            </div>
-          </section>
-        )}
-
-        {/* ── 6. Usuarios — admin only ── */}
-        {isAdmin && (
-          <section>
-            <SectionTitle>Usuarios</SectionTitle>
-            <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5">
-              <p className="text-xs text-zinc-500 mb-4">
-                Gestión de usuarios del sistema. Solo visible para administradores.
-              </p>
-              <UsersPanel currentUserId={user.id} />
-            </div>
-          </section>
-        )}
 
       </main>
     </div>
