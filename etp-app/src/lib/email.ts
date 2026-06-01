@@ -14,7 +14,9 @@ export async function sendPasswordResetEmail(
   const link = `${base}/auth/reset-password?token=${token}`;
 
   if (!process.env.RESEND_API_KEY) {
-    console.log(`[PASSWORD RESET] Link for ${email}: ${link}`);
+    console.log(
+      `[PASSWORD RESET]\nemail: ${email}\ntoken: ${token}\nurl: ${link}`
+    );
     return;
   }
 

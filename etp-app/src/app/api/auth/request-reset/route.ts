@@ -16,16 +16,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Email inválido." }, { status: 400 });
   }
 
+  console.log(`[REQUEST RESET] step=lookup email=${email}`);
+
   // Look up user — but always return ok to avoid revealing if email is registered.
   const userId = await findUserId(email);
+
+  console.log(`[REQUEST RESET] step=lookup_done email=${email} found=${!!userId}`);
+
   if (userId) {
     const token = randomBytes(32).toString("hex");
     const tokenHash = createHash("sha256").update(token).digest("hex");
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
-    await prisma.passwordResetToken.create({
-      data: { email, user_id: userId, token_hash: tokenHash, expires_at: expiresAt },
-    });
+    console.log(`[REQUEST RESET] step=token_generated email=${email} token=${token}`);
+
+    try {
+      await prisma.passwordResetToken.create({
+        data: { email, user_id: userId, token_hash: tokenHash, expires_at: expiresAt },
+      });
+      console.log(`[REQUEST RESET] step=token_saved email=${email}`);
+    } catch (err) {
+      console.error(`[REQUEST RESET] step=token_save_error email=${email}`, err);
+      return NextResponse.json({ ok: true });
+    }
 
     await sendPasswordResetEmail(email, token);
   }
@@ -48,18 +61,20 @@ async function findUserId(email: string): Promise<string | null> {
   try {
     const { createAdminClient } = await import("@/lib/supabase/admin");
     const admin = createAdminClient();
+    console.log(`[REQUEST RESET] step=admin_client_ok`);
     // listUsers is paginated; for an internal tool the first page is enough.
     const { data, error } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
     if (error) {
-      console.error("[REQUEST RESET] listUsers error:", error.message);
+      console.error(`[REQUEST RESET] step=list_users_error`, error.message);
       return null;
     }
+    console.log(`[REQUEST RESET] step=list_users_ok count=${data.users.length}`);
     const match = data.users.find(
       (u) => u.email?.toLowerCase() === email
     );
     return match?.id ?? null;
   } catch (err) {
-    console.error("[REQUEST RESET] admin client error:", err);
+    console.error(`[REQUEST RESET] step=admin_client_error`, err);
     return null;
   }
 }
