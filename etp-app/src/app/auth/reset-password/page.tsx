@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createImplicitClient } from "@/lib/supabase/implicit-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,33 +11,51 @@ type Status = "loading" | "ready" | "link-error" | "success";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
-  const supabase = useRef(createImplicitClient()).current;
 
-  const [status, setStatus]           = useState<Status>("loading");
-  const [password, setPassword]       = useState("");
-  const [confirm, setConfirm]         = useState("");
+  const [status, setStatus]             = useState<Status>("loading");
+  const [linkErrorMsg, setLinkErrorMsg] = useState<string>("El enlace expiró o ya fue usado.");
+  const [token, setToken]               = useState("");
+  const [password, setPassword]         = useState("");
+  const [confirm, setConfirm]           = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [submitting, setSubmitting]   = useState(false);
-  const [formError, setFormError]     = useState<string | null>(null);
+  const [submitting, setSubmitting]     = useState(false);
+  const [formError, setFormError]       = useState<string | null>(null);
 
-  // Parse the recovery tokens from the URL hash on mount.
-  // Supabase implicit flow delivers: #access_token=…&refresh_token=…&type=recovery
+  // On mount: read token from ?token= query param and validate it.
   useEffect(() => {
-    const hash   = typeof window !== "undefined" ? window.location.hash.slice(1) : "";
-    const params = new URLSearchParams(hash);
-    const accessToken  = params.get("access_token");
-    const refreshToken = params.get("refresh_token");
-    const type         = params.get("type");
+    const params = new URLSearchParams(
+      typeof window !== "undefined" ? window.location.search : ""
+    );
+    const t = params.get("token");
 
-    if (type !== "recovery" || !accessToken || !refreshToken) {
+    if (!t) {
+      setLinkErrorMsg("No se proporcionó un enlace de recuperación válido.");
       setStatus("link-error");
       return;
     }
 
-    supabase.auth
-      .setSession({ access_token: accessToken, refresh_token: refreshToken })
-      .then(({ error }) => setStatus(error ? "link-error" : "ready"));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    setToken(t);
+
+    fetch(`/api/auth/validate-token?token=${encodeURIComponent(t)}`)
+      .then((r) => r.json())
+      .then((data: { valid: boolean; reason?: string }) => {
+        if (!data.valid) {
+          const msg =
+            data.reason === "used"
+              ? "Este enlace ya fue utilizado. Solicita uno nuevo."
+              : data.reason === "expired"
+              ? "El enlace de recuperación expiró. Solicita uno nuevo."
+              : "El enlace de recuperación no es válido.";
+          setLinkErrorMsg(msg);
+          setStatus("link-error");
+        } else {
+          setStatus("ready");
+        }
+      })
+      .catch(() => {
+        setLinkErrorMsg("Error de red. Verifica tu conexión e intenta nuevamente.");
+        setStatus("link-error");
+      });
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -56,16 +73,14 @@ export default function ResetPasswordPage() {
 
     setSubmitting(true);
     try {
-      const { error } = await supabase.auth.updateUser({ password });
-      if (error) {
-        const msg = error.message.toLowerCase();
-        if (msg.includes("same password") || msg.includes("different from")) {
-          setFormError("La nueva contraseña debe ser diferente a la anterior.");
-        } else if (msg.includes("session") || msg.includes("not authenticated") || msg.includes("jwt")) {
-          setFormError("El enlace expiró o ya fue usado. Solicita uno nuevo desde el inicio de sesión.");
-        } else {
-          setFormError("No se pudo actualizar la contraseña. Solicita un nuevo enlace.");
-        }
+      const res = await fetch("/api/auth/do-reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, password }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setFormError(data.error ?? "No se pudo actualizar la contraseña.");
       } else {
         setStatus("success");
         setTimeout(() => router.push("/auth/login"), 2500);
@@ -101,9 +116,7 @@ export default function ResetPasswordPage() {
           <h1 className="text-xl font-semibold text-white mb-2">
             Enlace inválido o expirado
           </h1>
-          <p className="text-sm text-zinc-500 mb-8">
-            El enlace de recuperación no es válido o ya expiró. Solicita uno nuevo desde el inicio de sesión.
-          </p>
+          <p className="text-sm text-zinc-500 mb-8">{linkErrorMsg}</p>
           <a
             href="/auth/login"
             className="block w-full text-center rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-sm font-medium py-2.5 transition-colors"
@@ -207,10 +220,11 @@ export default function ResetPasswordPage() {
             disabled={submitting}
             className="w-full bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold disabled:opacity-40"
           >
-            {submitting
-              ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Actualizando…</>
-              : "Actualizar contraseña"
-            }
+            {submitting ? (
+              <><Loader2 className="w-4 h-4 animate-spin mr-2" />Actualizando…</>
+            ) : (
+              "Actualizar contraseña"
+            )}
           </Button>
 
           <p className="text-center">

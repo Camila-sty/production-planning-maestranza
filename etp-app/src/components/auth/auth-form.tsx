@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { createClient } from "@/lib/supabase/client";
-import { createImplicitClient } from "@/lib/supabase/implicit-client";
 import { localLogin, localRegister } from "@/actions/auth";
 import {
   localLoginSchema,
@@ -125,6 +124,10 @@ function LoginForm() {
   });
 
   const [forgotPassword, setForgotPassword] = useState(false);
+  const [forgotEmail, setForgotEmail]       = useState("");
+  const [forgotLoading, setForgotLoading]   = useState(false);
+  const [forgotSent, setForgotSent]         = useState(false);
+  const [forgotError, setForgotError]       = useState<string | null>(null);
 
   async function onSubmit(data: LocalLoginInput) {
     setServerError(null);
@@ -137,19 +140,88 @@ function LoginForm() {
     }
   }
 
+  async function handleForgotSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setForgotError(null);
+    setForgotLoading(true);
+    try {
+      const res = await fetch("/api/auth/request-reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: forgotEmail }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setForgotError(data.error ?? "Error al enviar el correo.");
+      } else {
+        setForgotSent(true);
+      }
+    } catch {
+      setForgotError("Error de red. Verifica tu conexión.");
+    } finally {
+      setForgotLoading(false);
+    }
+  }
+
   if (forgotPassword) {
+    if (forgotSent) {
+      return (
+        <div className="max-w-sm space-y-4">
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-4 text-sm text-emerald-400">
+            <p className="font-medium mb-1">Revisa tu correo.</p>
+            <p className="text-emerald-500/70">
+              Si el email está registrado, recibirás un enlace para restablecer tu contraseña. Expira en 1 hora.
+            </p>
+          </div>
+          <button
+            onClick={() => { setForgotPassword(false); setForgotSent(false); }}
+            className="text-amber-400 hover:text-amber-300 text-sm underline underline-offset-2"
+          >
+            Volver al inicio de sesión
+          </button>
+        </div>
+      );
+    }
+
     return (
-      <div className="max-w-sm space-y-4">
-        <p className="text-zinc-300 text-sm leading-relaxed">
-          Para restablecer tu contraseña, contacta al administrador del sistema.
+      <form onSubmit={handleForgotSubmit} className="max-w-sm space-y-4">
+        <p className="text-zinc-400 text-sm leading-relaxed">
+          Ingresa tu correo y te enviaremos un enlace para restablecer tu contraseña.
         </p>
+        <div className="space-y-1.5">
+          <Label htmlFor="forgot-email-local" className="text-zinc-300 text-sm">
+            Correo electrónico
+          </Label>
+          <Input
+            id="forgot-email-local"
+            type="email"
+            value={forgotEmail}
+            onChange={(e) => setForgotEmail(e.target.value)}
+            placeholder="usuario@empresa.cl"
+            required
+            className="bg-zinc-800/70 border-zinc-700 text-white placeholder:text-zinc-600 focus:border-amber-500 h-11"
+          />
+        </div>
+        {forgotError && (
+          <p className="text-sm text-red-400 bg-red-950/40 border border-red-900/50 rounded-lg px-3 py-2">
+            {forgotError}
+          </p>
+        )}
+        <Button
+          type="submit"
+          disabled={forgotLoading}
+          className="w-full h-11 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold text-sm"
+        >
+          {forgotLoading ? "Enviando..." : "Enviar enlace"}
+        </Button>
         <button
+          type="button"
           onClick={() => setForgotPassword(false)}
-          className="text-amber-400 hover:text-amber-300 text-sm underline underline-offset-2"
+          className="w-full text-center text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
         >
           Volver al inicio de sesión
         </button>
-      </div>
+      </form>
     );
   }
 
@@ -393,11 +465,18 @@ function SupabaseAuthPanel({ allowRegister, errorMessage }: { allowRegister: boo
         setSuccessMsg("Cuenta creada correctamente. Revisa tu correo para confirmar la cuenta.");
 
       } else {
-        const redirectTo = `${window.location.origin}/auth/reset-password`;
-        const implicitClient = createImplicitClient();
-        const { error } = await implicitClient.auth.resetPasswordForEmail(email, { redirectTo });
-        if (error) { setServerError(translateSupabaseError(error.message)); return; }
-        setSuccessMsg("Revisa tu correo. Te enviamos el enlace de recuperación. Ábrelo en este mismo navegador.");
+        // Custom password recovery — does not use Supabase's PKCE/OTP flow.
+        const res = await fetch("/api/auth/request-reset", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          setServerError(data.error ?? "Error al enviar el correo.");
+          return;
+        }
+        setSuccessMsg("Revisa tu correo. Si el email está registrado, recibirás un enlace que expira en 1 hora.");
       }
     } finally {
       setLoading(false);
