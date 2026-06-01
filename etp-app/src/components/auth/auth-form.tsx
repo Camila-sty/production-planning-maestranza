@@ -21,11 +21,12 @@ interface Props {
   isDev?: boolean;
   allowRegister?: boolean;
   errorMessage?: string;
+  adminEmail?: string;
 }
 
-export function AuthForm({ isDev, allowRegister = true, errorMessage }: Props) {
-  if (isDev) return <LocalAuthPanel allowRegister={allowRegister} />;
-  return <SupabaseAuthPanel allowRegister={allowRegister} errorMessage={errorMessage} />;
+export function AuthForm({ isDev, allowRegister = true, errorMessage, adminEmail }: Props) {
+  if (isDev) return <LocalAuthPanel allowRegister={allowRegister} adminEmail={adminEmail} />;
+  return <SupabaseAuthPanel allowRegister={allowRegister} errorMessage={errorMessage} adminEmail={adminEmail} />;
 }
 
 // ── Shared logo strip ─────────────────────────────────────────────────────────
@@ -54,9 +55,34 @@ function LogoStrip() {
   );
 }
 
+// ── Forgot-password static message ────────────────────────────────────────────
+
+function ForgotMessage({ adminEmail, onBack }: { adminEmail?: string; onBack: () => void }) {
+  return (
+    <div className="max-w-sm space-y-4">
+      <div className="rounded-lg border border-zinc-700 bg-zinc-800/60 px-4 py-4 space-y-2">
+        <p className="text-sm text-zinc-300 leading-relaxed">
+          Para restablecer tu contraseña, comunícate con el administrador del sistema.
+        </p>
+        {adminEmail && (
+          <p className="text-sm font-medium text-amber-400">
+            Administrador: {adminEmail}
+          </p>
+        )}
+      </div>
+      <button
+        onClick={onBack}
+        className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+      >
+        Volver al inicio de sesión
+      </button>
+    </div>
+  );
+}
+
 // ── Local auth panel ──────────────────────────────────────────────────────────
 
-function LocalAuthPanel({ allowRegister }: { allowRegister: boolean }) {
+function LocalAuthPanel({ allowRegister, adminEmail }: { allowRegister: boolean; adminEmail?: string }) {
   const [mode, setMode] = useState<"login" | "register">("login");
 
   return (
@@ -101,7 +127,9 @@ function LocalAuthPanel({ allowRegister }: { allowRegister: boolean }) {
           </div>
         )}
 
-        {mode === "login" || !allowRegister ? <LoginForm /> : <RegisterForm />}
+        {mode === "login" || !allowRegister
+          ? <LoginForm adminEmail={adminEmail} />
+          : <RegisterForm />}
       </div>
 
       <p className="px-8 sm:px-12 xl:px-14 pb-8 text-xs text-zinc-700 text-center">
@@ -111,9 +139,10 @@ function LocalAuthPanel({ allowRegister }: { allowRegister: boolean }) {
   );
 }
 
-function LoginForm() {
+function LoginForm({ adminEmail }: { adminEmail?: string }) {
   const router = useRouter();
   const [serverError, setServerError] = useState<string | null>(null);
+  const [showForgot, setShowForgot]   = useState(false);
 
   const {
     register,
@@ -122,12 +151,6 @@ function LoginForm() {
   } = useForm<LocalLoginInput>({
     resolver: zodResolver(localLoginSchema),
   });
-
-  const [forgotPassword, setForgotPassword] = useState(false);
-  const [forgotEmail, setForgotEmail]       = useState("");
-  const [forgotLoading, setForgotLoading]   = useState(false);
-  const [forgotSent, setForgotSent]         = useState(false);
-  const [forgotError, setForgotError]       = useState<string | null>(null);
 
   async function onSubmit(data: LocalLoginInput) {
     setServerError(null);
@@ -140,89 +163,8 @@ function LoginForm() {
     }
   }
 
-  async function handleForgotSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setForgotError(null);
-    setForgotLoading(true);
-    try {
-      const res = await fetch("/api/auth/request-reset", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: forgotEmail }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setForgotError(data.error ?? "Error al enviar el correo.");
-      } else {
-        setForgotSent(true);
-      }
-    } catch {
-      setForgotError("Error de red. Verifica tu conexión.");
-    } finally {
-      setForgotLoading(false);
-    }
-  }
-
-  if (forgotPassword) {
-    if (forgotSent) {
-      return (
-        <div className="max-w-sm space-y-4">
-          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-4 text-sm text-emerald-400">
-            <p className="font-medium mb-1">Revisa tu correo.</p>
-            <p className="text-emerald-500/70">
-              Si el email está registrado, recibirás un enlace para restablecer tu contraseña. Expira en 1 hora.
-            </p>
-          </div>
-          <button
-            onClick={() => { setForgotPassword(false); setForgotSent(false); }}
-            className="text-amber-400 hover:text-amber-300 text-sm underline underline-offset-2"
-          >
-            Volver al inicio de sesión
-          </button>
-        </div>
-      );
-    }
-
-    return (
-      <form onSubmit={handleForgotSubmit} className="max-w-sm space-y-4">
-        <p className="text-zinc-400 text-sm leading-relaxed">
-          Ingresa tu correo y te enviaremos un enlace para restablecer tu contraseña.
-        </p>
-        <div className="space-y-1.5">
-          <Label htmlFor="forgot-email-local" className="text-zinc-300 text-sm">
-            Correo electrónico
-          </Label>
-          <Input
-            id="forgot-email-local"
-            type="email"
-            value={forgotEmail}
-            onChange={(e) => setForgotEmail(e.target.value)}
-            placeholder="usuario@empresa.cl"
-            required
-            className="bg-zinc-800/70 border-zinc-700 text-white placeholder:text-zinc-600 focus:border-amber-500 h-11"
-          />
-        </div>
-        {forgotError && (
-          <p className="text-sm text-red-400 bg-red-950/40 border border-red-900/50 rounded-lg px-3 py-2">
-            {forgotError}
-          </p>
-        )}
-        <Button
-          type="submit"
-          disabled={forgotLoading}
-          className="w-full h-11 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold text-sm"
-        >
-          {forgotLoading ? "Enviando..." : "Enviar enlace"}
-        </Button>
-        <button
-          type="button"
-          onClick={() => setForgotPassword(false)}
-          className="w-full text-center text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-        >
-          Volver al inicio de sesión
-        </button>
-      </form>
-    );
+  if (showForgot) {
+    return <ForgotMessage adminEmail={adminEmail} onBack={() => setShowForgot(false)} />;
   }
 
   return (
@@ -251,7 +193,7 @@ function LoginForm() {
           </Label>
           <button
             type="button"
-            onClick={() => setForgotPassword(true)}
+            onClick={() => setShowForgot(true)}
             className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
           >
             ¿Olvidaste tu contraseña?
@@ -403,9 +345,6 @@ function RegisterForm() {
 
 function translateSupabaseError(message: string): string {
   const msg = message.toLowerCase();
-  if (msg.includes("rate limit") || msg.includes("email rate limit") || msg.includes("too many requests")) {
-    return "Se alcanzó el límite temporal de envío de correos. Espera unos minutos antes de intentarlo nuevamente.";
-  }
   if (msg.includes("already registered") || msg.includes("already exists") || msg.includes("user already")) {
     return "Este correo ya está registrado.";
   }
@@ -414,8 +353,17 @@ function translateSupabaseError(message: string): string {
 
 // ── Supabase auth panel (production) ─────────────────────────────────────────
 
-function SupabaseAuthPanel({ allowRegister, errorMessage }: { allowRegister: boolean; errorMessage?: string }) {
-  const [mode, setMode] = useState<"login" | "signup" | "forgot">("login");
+function SupabaseAuthPanel({
+  allowRegister,
+  errorMessage,
+  adminEmail,
+}: {
+  allowRegister: boolean;
+  errorMessage?: string;
+  adminEmail?: string;
+}) {
+  const [mode, setMode]         = useState<"login" | "signup">("login");
+  const [showForgot, setShowForgot] = useState(false);
   const [email, setEmail]       = useState("");
   const [name, setName]         = useState("");
   const [password, setPassword] = useState("");
@@ -425,8 +373,9 @@ function SupabaseAuthPanel({ allowRegister, errorMessage }: { allowRegister: boo
   const router = useRouter();
   const supabase = createClient();
 
-  function switchMode(next: "login" | "signup" | "forgot") {
+  function switchMode(next: "login" | "signup") {
     setMode(next);
+    setShowForgot(false);
     setServerError(null);
     setSuccessMsg(null);
   }
@@ -452,7 +401,7 @@ function SupabaseAuthPanel({ allowRegister, errorMessage }: { allowRegister: boo
         router.push("/");
         router.refresh();
 
-      } else if (mode === "signup") {
+      } else {
         const { error } = await supabase.auth.signUp({
           email,
           password,
@@ -463,25 +412,36 @@ function SupabaseAuthPanel({ allowRegister, errorMessage }: { allowRegister: boo
           return;
         }
         setSuccessMsg("Cuenta creada correctamente. Revisa tu correo para confirmar la cuenta.");
-
-      } else {
-        // Custom password recovery — does not use Supabase's PKCE/OTP flow.
-        const res = await fetch("/api/auth/request-reset", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email }),
-        });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          setServerError(data.error ?? "Error al enviar el correo.");
-          return;
-        }
-        setSuccessMsg("Revisa tu correo. Si el email está registrado, recibirás un enlace que expira en 1 hora.");
       }
     } finally {
       setLoading(false);
     }
   }
+
+  // ── Forgot password message ──────────────────────────────────────────────
+
+  if (showForgot) {
+    return (
+      <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col justify-center px-8 sm:px-12 xl:px-14 py-12">
+          <LogoStrip />
+          <div className="mb-8">
+            <h2 className="text-3xl font-bold text-white mb-1 leading-tight">
+              Sistema de Planificación
+              <br />
+              <span className="text-amber-400">de Producción</span>
+            </h2>
+          </div>
+          <ForgotMessage adminEmail={adminEmail} onBack={() => setShowForgot(false)} />
+        </div>
+        <p className="px-8 sm:px-12 xl:px-14 pb-8 text-xs text-zinc-700 text-center">
+          ETP Equipos · Centro Equipos · Sistema interno de planificación
+        </p>
+      </div>
+    );
+  }
+
+  // ── Login / Signup ────────────────────────────────────────────────────────
 
   return (
     <div className="flex-1 flex flex-col">
@@ -499,7 +459,7 @@ function SupabaseAuthPanel({ allowRegister, errorMessage }: { allowRegister: boo
           </p>
         </div>
 
-        {allowRegister && mode !== "forgot" && (
+        {allowRegister && (
           <div className="flex gap-1 mb-8 bg-zinc-800/60 rounded-lg p-1 w-fit">
             <button
               onClick={() => switchMode("login")}
@@ -524,14 +484,14 @@ function SupabaseAuthPanel({ allowRegister, errorMessage }: { allowRegister: boo
           </div>
         )}
 
-        {/* Error banner from callback redirect (e.g. link expired, wrong browser) */}
+        {/* Error banner from redirect (e.g. session expired) */}
         {errorMessage && !successMsg && (
           <div className="mb-5 max-w-sm text-sm text-red-400 bg-red-950/40 border border-red-900/50 rounded-lg px-3 py-2.5">
             {errorMessage}
           </div>
         )}
 
-        {/* Success banner (signup / forgot) */}
+        {/* Success banner (signup) */}
         {successMsg && (
           <div className="mb-5 max-w-sm text-sm text-green-400 bg-green-950/40 border border-green-900/50 rounded-lg px-3 py-2.5">
             {successMsg}
@@ -575,35 +535,33 @@ function SupabaseAuthPanel({ allowRegister, errorMessage }: { allowRegister: boo
               />
             </div>
 
-            {/* Password — login and signup only */}
-            {mode !== "forgot" && (
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="supabase-password" className="text-zinc-300 text-sm">
-                    Contraseña
-                  </Label>
-                  {mode === "login" && (
-                    <button
-                      type="button"
-                      onClick={() => switchMode("forgot")}
-                      className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-                    >
-                      ¿Olvidaste tu contraseña?
-                    </button>
-                  )}
-                </div>
-                <Input
-                  id="supabase-password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  required
-                  autoComplete={mode === "signup" ? "new-password" : "current-password"}
-                  className="bg-zinc-800/70 border-zinc-700 text-white placeholder:text-zinc-600 focus:border-amber-500 h-11"
-                />
+            {/* Password */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="supabase-password" className="text-zinc-300 text-sm">
+                  Contraseña
+                </Label>
+                {mode === "login" && (
+                  <button
+                    type="button"
+                    onClick={() => setShowForgot(true)}
+                    className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                  >
+                    ¿Olvidaste tu contraseña?
+                  </button>
+                )}
               </div>
-            )}
+              <Input
+                id="supabase-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                className="bg-zinc-800/70 border-zinc-700 text-white placeholder:text-zinc-600 focus:border-amber-500 h-11"
+              />
+            </div>
 
             {/* Inline error */}
             {serverError && (
@@ -621,24 +579,12 @@ function SupabaseAuthPanel({ allowRegister, errorMessage }: { allowRegister: boo
                 ? "Cargando..."
                 : mode === "login"
                 ? "Ingresar"
-                : mode === "signup"
-                ? "Crear cuenta"
-                : "Enviar enlace de recuperación"}
+                : "Crear cuenta"}
             </Button>
-
-            {mode === "forgot" && (
-              <button
-                type="button"
-                onClick={() => switchMode("login")}
-                className="w-full text-center text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-              >
-                Volver al inicio de sesión
-              </button>
-            )}
           </form>
         )}
 
-        {successMsg && mode !== "login" && (
+        {successMsg && (
           <button
             onClick={() => switchMode("login")}
             className="mt-4 text-sm text-amber-400 hover:text-amber-300 underline underline-offset-2"

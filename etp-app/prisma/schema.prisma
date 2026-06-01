@@ -156,15 +156,3 @@ model SpecialWorkingDay {
 
   @@map("special_working_day")
 }
-
-model PasswordResetToken {
-  id         String    @id @default(cuid())
-  email      String
-  user_id    String
-  token_hash String    @unique
-  expires_at DateTime
-  used_at    DateTime?
-  created_at DateTime  @default(now())
-
-  @@map("password_reset_token")
-}

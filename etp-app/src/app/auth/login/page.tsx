@@ -24,6 +24,7 @@ export default function LoginPage({
 }) {
   const isDev = process.env.DEV_AUTH === "true";
   const allowRegister = process.env.ALLOW_PUBLIC_REGISTER !== "false";
+  const adminEmail = (process.env.ADMIN_EMAILS ?? "").split(",")[0]?.trim() || undefined;
 
   const errorKey = typeof searchParams.error === "string" ? searchParams.error : undefined;
   const errorMessage = errorKey ? (ERROR_MESSAGES[errorKey] ?? undefined) : undefined;
@@ -89,7 +90,7 @@ export default function LoginPage({
 
       {/* ── RIGHT PANEL: full-height auth panel ─────────────────── */}
       <div className="w-full lg:w-[480px] xl:w-[520px] flex flex-col bg-zinc-950 relative z-10 border-l border-zinc-800/60">
-        <AuthForm isDev={isDev} allowRegister={allowRegister} errorMessage={errorMessage} />
+        <AuthForm isDev={isDev} allowRegister={allowRegister} errorMessage={errorMessage} adminEmail={adminEmail} />
       </div>
 
     </div>

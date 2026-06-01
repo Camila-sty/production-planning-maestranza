@@ -9,6 +9,7 @@ import { LeadTimeTable } from "@/components/planning/lead-time-table";
 import { PlanButton } from "@/components/planning/plan-button";
 import { OptimizedTable } from "@/components/planning/optimized-table";
 import { SpecialDaysPanel } from "@/components/planning/special-days-panel";
+import { UsersPanel } from "@/components/admin/users-panel";
 import { logout } from "@/actions/auth";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -225,6 +226,19 @@ export default async function HomePage() {
                 processes={processCapacities as unknown as ProcessCapacity[]}
                 isAdmin={isAdmin}
               />
+            </div>
+          </section>
+        )}
+
+        {/* ── 6. Usuarios — admin only ── */}
+        {isAdmin && (
+          <section>
+            <SectionTitle>Usuarios</SectionTitle>
+            <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5">
+              <p className="text-xs text-zinc-500 mb-4">
+                Gestión de usuarios del sistema. Solo visible para administradores.
+              </p>
+              <UsersPanel />
             </div>
           </section>
         )}
