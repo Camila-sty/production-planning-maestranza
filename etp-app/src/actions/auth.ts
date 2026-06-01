@@ -3,7 +3,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { isAdminEmail } from "@/lib/auth";
+import { isAdminEmail, isAllowedDomain } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 
 // ── Local email/password auth (DEV_AUTH=true) ────────────────────────────────
@@ -43,6 +43,10 @@ export async function localRegister(
 ): Promise<{ error?: string }> {
   if (process.env.ALLOW_PUBLIC_REGISTER === "false") {
     return { error: "El registro está deshabilitado. Contacta al administrador." };
+  }
+
+  if (!isAllowedDomain(email)) {
+    return { error: "Solo se permiten correos corporativos @etpequipos.cl" };
   }
 
   const existing = await prisma.localUser.findUnique({ where: { email } });

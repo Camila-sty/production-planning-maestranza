@@ -7,8 +7,10 @@ export interface AdminUser {
   email: string;
   name: string | null;
   role: string;
-  isActive: boolean;
+  status: "active" | "deleted";
+  domain: string;
   createdAt: string;
+  lastSignIn: string | null;
 }
 
 export async function GET() {
@@ -27,8 +29,10 @@ export async function GET() {
       email: u.email,
       name: u.name ?? null,
       role: u.role,
-      isActive: u.is_active,
+      status: u.is_active ? "active" : "deleted",
+      domain: u.email.split("@")[1] ?? "",
       createdAt: u.created_at.toISOString(),
+      lastSignIn: null,
     }));
     return NextResponse.json({ users });
   }
@@ -48,8 +52,10 @@ export async function GET() {
       email: u.email ?? "",
       name: (u.user_metadata?.name as string | undefined) ?? null,
       role: isAdminEmail(u.email ?? "") ? "admin" : "user",
-      isActive: !!u.email_confirmed_at,
+      status: u.app_metadata?.status === "deleted" ? "deleted" : "active",
+      domain: (u.email ?? "").split("@")[1] ?? "",
       createdAt: u.created_at,
+      lastSignIn: u.last_sign_in_at ?? null,
     }));
 
     return NextResponse.json({ users });

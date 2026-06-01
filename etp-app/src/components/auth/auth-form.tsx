@@ -402,6 +402,10 @@ function SupabaseAuthPanel({
         router.refresh();
 
       } else {
+        if (!email.trim().toLowerCase().endsWith("@etpequipos.cl")) {
+          setServerError("Solo se permiten correos corporativos @etpequipos.cl");
+          return;
+        }
         const { error } = await supabase.auth.signUp({
           email,
           password,

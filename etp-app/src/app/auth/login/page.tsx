@@ -12,9 +12,7 @@ const equipoImages = [
 ];
 
 const ERROR_MESSAGES: Record<string, string> = {
-  otp_expirado:   "El enlace de recuperación expiró. Solicita uno nuevo.",
-  otro_navegador: "El enlace expiró o fue abierto en otro navegador. Solicita uno nuevo y ábrelo en el mismo navegador donde hiciste la solicitud.",
-  link_invalido:  "El enlace de recuperación no es válido. Solicita uno nuevo.",
+  cuenta_eliminada: "Tu usuario fue desactivado. Contacta al administrador.",
 };
 
 export default function LoginPage({

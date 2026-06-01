@@ -238,7 +238,7 @@ export default async function HomePage() {
               <p className="text-xs text-zinc-500 mb-4">
                 Gestión de usuarios del sistema. Solo visible para administradores.
               </p>
-              <UsersPanel />
+              <UsersPanel currentUserId={user.id} />
             </div>
           </section>
         )}

@@ -1,6 +1,15 @@
 import { cookies } from "next/headers";
+import { prisma } from "@/lib/prisma";
 
 export type AppUser = { id: string; email: string; isAdmin: boolean };
+
+/** Domain allowed for new registrations. */
+export const ALLOWED_DOMAIN = "@etpequipos.cl";
+
+/** Returns true if the email belongs to the allowed corporate domain. */
+export function isAllowedDomain(email: string): boolean {
+  return email.trim().toLowerCase().endsWith(ALLOWED_DOMAIN);
+}
 
 /**
  * Returns true if the given email is in the ADMIN_EMAILS env var.
@@ -28,6 +37,9 @@ export async function getUser(): Promise<AppUser | null> {
     const session = cookieStore.get("dev-session");
     const email = session?.value;
     if (!email) return null;
+    // Check is_active — deleted users are denied access.
+    const localUser = await prisma.localUser.findUnique({ where: { email } });
+    if (!localUser || !localUser.is_active) return null;
     return { id: email, email, isAdmin: isAdminEmail(email) };
   }
 
@@ -37,6 +49,8 @@ export async function getUser(): Promise<AppUser | null> {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return null;
+  // Deny access to users marked as deleted via app_metadata.
+  if (user.app_metadata?.status === "deleted") return null;
   const email = user.email ?? "";
   return { id: user.id, email, isAdmin: isAdminEmail(email) };
 }
