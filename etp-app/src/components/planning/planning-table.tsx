@@ -19,6 +19,9 @@ import type { SalesPlanning, PlanRunHistoryEntry } from "@/types";
 import { Pencil, Trash2, Search, Timer } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { priorityBadgeClass } from "@/lib/priority";
+import { TablePagination } from "@/components/ui/table-pagination";
+
+const PAGE_SIZE = 10;
 
 interface PlanningTableProps {
   records: SalesPlanning[];
@@ -73,6 +76,7 @@ export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: Plan
   const [bufferDays, setBufferDays] = useState("");
   const [bufferNote, setBufferNote] = useState("");
   const [savingBuffer, setSavingBuffer] = useState(false);
+  const [page, setPage] = useState(1);
 
   // Keep local copy in sync when the server refreshes the records prop
   useEffect(() => { setLocalRecords(records); }, [records]);
@@ -93,6 +97,10 @@ export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: Plan
       (arrivalFilter === "without" && r.llegada == null);
     return matchesText && matchesArrival;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const paginated = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   async function handleDelete(record: SalesPlanning) {
     setDeletingId(record.id);
@@ -247,23 +255,23 @@ export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: Plan
           <Input
             placeholder="Buscar por OT, cliente, equipo, VIN..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             className="pl-8 bg-zinc-800/50 border-zinc-700 text-white placeholder:text-zinc-600 focus:border-amber-500 h-8 text-sm"
           />
         </div>
         <select
           value={arrivalFilter}
-          onChange={(e) => setArrivalFilter(e.target.value as "all" | "with" | "without")}
+          onChange={(e) => { setArrivalFilter(e.target.value as "all" | "with" | "without"); setPage(1); }}
           className="h-8 px-2.5 rounded-md border border-zinc-700 bg-zinc-800/50 text-sm text-zinc-300 focus:outline-none focus:border-amber-500 cursor-pointer"
         >
           <option value="all">Todos</option>
           <option value="with">Con llegada</option>
           <option value="without">Sin llegada</option>
         </select>
-        <span className="text-xs text-zinc-500">{filtered.length} registro{filtered.length !== 1 ? "s" : ""}</span>
+        <span className="text-xs text-zinc-500">{filtered.length} registro{filtered.length !== 1 ? "s" : ""} en total</span>
       </div>
 
-      {/* Table */}
+      {/* Table + Pagination */}
       <div className="overflow-x-auto rounded-lg border border-zinc-800">
         <table className="w-full text-sm">
           <thead>
@@ -276,14 +284,14 @@ export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: Plan
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 && (
+            {paginated.length === 0 && (
               <tr>
                 <td colSpan={COLS.length} className="text-center py-10 text-zinc-600">
                   {search ? "Sin resultados para la búsqueda" : "No hay registros aún"}
                 </td>
               </tr>
             )}
-            {filtered.map((r, i) => {
+            {paginated.map((r, i) => {
               const bufferDaysVal = r.planning_buffer_days ?? 0;
               const isAtrasado = bufferDaysVal < 0;
               const estimatedEnd = endDateMap[r.id] ?? null;
@@ -397,6 +405,15 @@ export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: Plan
           </tbody>
         </table>
       </div>
+
+      <TablePagination
+        page={safePage}
+        totalPages={totalPages}
+        totalRecords={filtered.length}
+        pageSize={PAGE_SIZE}
+        onPrev={() => setPage((p) => Math.max(1, p - 1))}
+        onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+      />
     </div>
   );
 }
