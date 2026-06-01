@@ -23,6 +23,60 @@ import { TablePagination } from "@/components/ui/table-pagination";
 
 const PAGE_SIZE = 10;
 
+// ── Sort helpers ────────────────────────────────────────────────────────────
+
+type SortDir = "asc" | "desc";
+
+const COL_TYPE: Record<string, "text" | "number" | "date"> = {
+  ot: "text",
+  codigo_plazo: "number",
+  cliente: "text",
+  equipo: "text",
+  vin: "text",
+  llegada: "date",
+  prioridad: "number",
+  buffer: "number",
+  entrega_estimada: "date",
+  estado: "text",
+  creado_por: "text",
+};
+
+function getSortValue(
+  r: SalesPlanning,
+  key: string,
+  endDateMap: Record<string, string>
+): unknown {
+  switch (key) {
+    case "ot": return r.ot ?? null;
+    case "codigo_plazo": return r.codigo_plazo ?? null;
+    case "cliente": return r.cliente ?? null;
+    case "equipo": return r.equipo ?? null;
+    case "vin": return r.vin ?? null;
+    case "llegada": return r.llegada ? new Date(r.llegada).toISOString() : null;
+    case "prioridad": return r.prioridad ?? null;
+    case "buffer": return r.planning_buffer_days ?? null;
+    case "entrega_estimada": return endDateMap[r.id] ?? null;
+    case "estado": return (r.planning_buffer_days ?? 0) < 0 ? "Atrasado" : "Al día";
+    case "creado_por": return r.created_by ?? null;
+    default: return null;
+  }
+}
+
+function compareSort(a: unknown, b: unknown, type: "text" | "number" | "date", dir: SortDir): number {
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;  // nulls always last
+  if (b == null) return -1;
+  let result: number;
+  if (type === "number") {
+    result = Number(a) - Number(b);
+  } else if (type === "date") {
+    result = new Date(a as string).getTime() - new Date(b as string).getTime();
+  } else {
+    result = String(a).localeCompare(String(b), "es");
+  }
+  return dir === "asc" ? result : -result;
+}
+
 interface PlanningTableProps {
   records: SalesPlanning[];
   endDateMap: Record<string, string>;
@@ -77,6 +131,18 @@ export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: Plan
   const [bufferNote, setBufferNote] = useState("");
   const [savingBuffer, setSavingBuffer] = useState(false);
   const [page, setPage] = useState(1);
+  const [sortCol, setSortCol] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  function handleSort(key: string) {
+    if (sortCol === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortCol(key);
+      setSortDir("asc");
+    }
+    setPage(1);
+  }
 
   // Keep local copy in sync when the server refreshes the records prop
   useEffect(() => { setLocalRecords(records); }, [records]);
@@ -98,9 +164,20 @@ export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: Plan
     return matchesText && matchesArrival;
   });
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const sorted = sortCol
+    ? [...filtered].sort((a, b) =>
+        compareSort(
+          getSortValue(a, sortCol, endDateMap),
+          getSortValue(b, sortCol, endDateMap),
+          COL_TYPE[sortCol] ?? "text",
+          sortDir
+        )
+      )
+    : filtered;
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
-  const paginated = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const paginated = sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   async function handleDelete(record: SalesPlanning) {
     setDeletingId(record.id);
@@ -149,7 +226,20 @@ export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: Plan
     }
   }
 
-  const COLS = ["OT", "Cód. Plazo", "Cliente", "Equipo", "VIN", "Llegada", "Prioridad", ...(isAdmin ? ["Buffer"] : []), "Entrega Estimada", "Estado", "Creado por", "Acciones"];
+  const COL_DEFS = [
+    { key: "ot",               label: "OT" },
+    { key: "codigo_plazo",     label: "Cód. Plazo" },
+    { key: "cliente",          label: "Cliente" },
+    { key: "equipo",           label: "Equipo" },
+    { key: "vin",              label: "VIN" },
+    { key: "llegada",          label: "Llegada" },
+    { key: "prioridad",        label: "Prioridad" },
+    ...(isAdmin ? [{ key: "buffer", label: "Buffer" }] : []),
+    { key: "entrega_estimada", label: "Entrega Estimada" },
+    { key: "estado",           label: "Estado" },
+    { key: "creado_por",       label: "Creado por" },
+    { key: "acciones",         label: "Acciones" },
+  ];
 
   return (
     <div className="space-y-4">
@@ -276,17 +366,27 @@ export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: Plan
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-zinc-800 bg-zinc-900/80">
-              {COLS.map((h) => (
-                <th key={h} className="text-left px-3 py-2.5 text-xs text-zinc-500 uppercase tracking-wider font-medium whitespace-nowrap">
-                  {h}
-                </th>
-              ))}
+              {COL_DEFS.map(({ key, label }) => {
+                const sortable = key in COL_TYPE;
+                const isActive = sortCol === key;
+                return (
+                  <th
+                    key={key}
+                    onDoubleClick={sortable ? () => handleSort(key) : undefined}
+                    className={`text-left px-3 py-2.5 text-xs uppercase tracking-wider font-medium whitespace-nowrap select-none transition-colors ${
+                      sortable ? "cursor-pointer" : ""
+                    } ${isActive ? "text-amber-400" : "text-zinc-500 hover:text-zinc-300"}`}
+                  >
+                    {label}{isActive ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
             {paginated.length === 0 && (
               <tr>
-                <td colSpan={COLS.length} className="text-center py-10 text-zinc-600">
+                <td colSpan={COL_DEFS.length} className="text-center py-10 text-zinc-600">
                   {search ? "Sin resultados para la búsqueda" : "No hay registros aún"}
                 </td>
               </tr>
@@ -409,7 +509,7 @@ export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: Plan
       <TablePagination
         page={safePage}
         totalPages={totalPages}
-        totalRecords={filtered.length}
+        totalRecords={sorted.length}
         pageSize={PAGE_SIZE}
         onPrev={() => setPage((p) => Math.max(1, p - 1))}
         onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
