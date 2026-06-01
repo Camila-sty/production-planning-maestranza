@@ -4,7 +4,10 @@ import { updateSession } from "@/lib/supabase/middleware";
 export async function proxy(request: NextRequest) {
   if (process.env.DEV_AUTH === "true") {
     const session = request.cookies.get("dev-session");
-    if (!session && !request.nextUrl.pathname.startsWith("/auth")) {
+    const { pathname } = request.nextUrl;
+    const isPublic =
+      pathname.startsWith("/auth") || pathname.startsWith("/api/auth/");
+    if (!session && !isPublic) {
       const url = request.nextUrl.clone();
       url.pathname = "/auth/login";
       return NextResponse.redirect(url);
