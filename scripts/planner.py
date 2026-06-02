@@ -37,13 +37,18 @@ ENV_PATH     = PROJECT_ROOT / "etp-app" / ".env.local"
 
 
 def load_db_url() -> str:
+    # 1. Environment variable — used in Railway / CI (no .env.local present)
+    env_val = os.environ.get("DATABASE_URL", "").strip()
+    if env_val:
+        return env_val.replace("%21", "!")
+    # 2. .env.local file — used in local development
     with open(ENV_PATH) as f:
         for line in f:
             line = line.strip()
             if line.startswith("DATABASE_URL="):
                 url = line.split("=", 1)[1].strip().strip('"').strip("'")
                 return url.replace("%21", "!")
-    raise RuntimeError("DATABASE_URL not found in .env.local")
+    raise RuntimeError("DATABASE_URL not found in environment or .env.local")
 
 
 # ---------------------------------------------------------------------------

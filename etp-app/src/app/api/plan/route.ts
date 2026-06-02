@@ -1,31 +1,15 @@
 import { NextResponse } from "next/server";
 import { getUser } from "@/lib/auth";
-import { execFile } from "child_process";
-import { promisify } from "util";
-import path from "path";
-import fs from "fs";
 
-const execFileAsync = promisify(execFile);
-
-async function getPythonDiagnostics(): Promise<Record<string, string>> {
-  const diag: Record<string, string> = {};
-  try {
-    const { stdout: pyVer } = await execFileAsync("python3", ["--version"]);
-    diag.python_version = pyVer.trim();
-  } catch (e) {
-    diag.python_version = `ERROR: ${(e as Error).message}`;
-  }
-  try {
-    const { stdout: ortVer } = await execFileAsync("python3", [
-      "-c",
-      "import ortools; print(ortools.__version__)",
-    ]);
-    diag.ortools_version = ortVer.trim();
-  } catch (e) {
-    diag.ortools_version = `ERROR: ${(e as Error).message}`;
-  }
-  return diag;
-}
+// ---------------------------------------------------------------------------
+// POST /api/plan — trigger a planning run
+//
+// Production (PLANNER_SERVICE_URL is set):
+//   Calls the Railway microservice via HTTP.
+//
+// Development (PLANNER_SERVICE_URL is not set):
+//   Falls back to running python3 scripts/planner.py locally via child_process.
+// ---------------------------------------------------------------------------
 
 export async function POST() {
   const user = await getUser();
@@ -34,73 +18,81 @@ export async function POST() {
   if (!user.isAdmin)
     return NextResponse.json({ error: "No autorizado: requiere rol administrador." }, { status: 403 });
 
-  const cwd        = process.cwd();
-  const scriptPath = path.resolve(cwd, "..", "scripts", "planner.py");
-  const scriptExists = fs.existsSync(scriptPath);
+  const serviceUrl   = process.env.PLANNER_SERVICE_URL?.replace(/\/$/, "");
+  const serviceToken = process.env.PLANNER_SERVICE_TOKEN ?? "";
 
-  console.log("[planner] === DIAGNOSTIC INFO ===");
-  console.log("[planner] cwd:", cwd);
-  console.log("[planner] scriptPath:", scriptPath);
-  console.log("[planner] scriptExists:", scriptExists);
-  console.log("[planner] NODE_ENV:", process.env.NODE_ENV);
-  console.log("[planner] platform:", process.platform);
+  // ── Production path: call Railway microservice ──────────────────────────
+  if (serviceUrl) {
+    let resp: Response;
+    try {
+      resp = await fetch(`${serviceUrl}/run`, {
+        method:  "POST",
+        headers: {
+          "Authorization": `Bearer ${serviceToken}`,
+          "Content-Type":  "application/json",
+        },
+        // Railway functions can run up to 120 s; match planner timeout
+        signal: AbortSignal.timeout(130_000),
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[planner] fetch error:", msg);
+      return NextResponse.json(
+        { error: "El planificador falló", detail: `fetch error: ${msg}` },
+        { status: 500 }
+      );
+    }
 
-  const diag = await getPythonDiagnostics();
-  console.log("[planner] python_version:", diag.python_version);
-  console.log("[planner] ortools_version:", diag.ortools_version);
+    const data = await resp.json().catch(() => ({})) as Record<string, unknown>;
+
+    if (!resp.ok || !data.success) {
+      console.error("[planner] service error:", data);
+      const detail = [
+        `status: ${resp.status}`,
+        data.error   ? `error: ${data.error}`    : "",
+        data.stdout  ? `stdout: ${data.stdout}`  : "",
+        data.stderr  ? `stderr: ${data.stderr}`  : "",
+      ].filter(Boolean).join("\n");
+      return NextResponse.json(
+        { error: "El planificador falló", detail },
+        { status: 500 }
+      );
+    }
+
+    const output = String(data.stdout ?? "") + (data.stderr ? `\nSTDERR: ${data.stderr}` : "");
+    return NextResponse.json({ success: true, output });
+  }
+
+  // ── Development path: run python3 locally ───────────────────────────────
+  const { execFile } = await import("child_process");
+  const { promisify } = await import("util");
+  const path = await import("path");
+  const execFileAsync = promisify(execFile);
+
+  const scriptPath = path.resolve(process.cwd(), "..", "scripts", "planner.py");
 
   try {
-    console.log("[planner] Running:", "python3", scriptPath);
     const { stdout, stderr } = await execFileAsync(
       "python3",
       [scriptPath],
       { timeout: 120_000 }
     );
-    console.log("[planner] exit_code: 0");
-    console.log("[planner] stdout:", stdout);
-    if (stderr) console.log("[planner] stderr:", stderr);
     const output = stdout + (stderr ? `\nSTDERR: ${stderr}` : "");
     return NextResponse.json({ success: true, output });
   } catch (e: unknown) {
-    const err = e as {
-      stdout?: string;
-      stderr?: string;
-      message?: string;
-      code?: number | string;
-      signal?: string;
-      killed?: boolean;
-    };
-    console.error("[planner] === EXECUTION FAILED ===");
-    console.error("[planner] exit_code:", err.code);
-    console.error("[planner] signal:", err.signal);
-    console.error("[planner] killed (timeout):", err.killed);
-    console.error("[planner] message:", err.message);
-    console.error("[planner] stdout:", err.stdout ?? "(empty)");
-    console.error("[planner] stderr:", err.stderr ?? "(empty)");
-    console.error("[planner] diagnostics:", JSON.stringify(diag));
-    console.error("[planner] scriptExists:", scriptExists);
-
-    const detail = [
-      `exit_code: ${err.code}`,
-      `killed: ${err.killed}`,
-      `python: ${diag.python_version}`,
-      `ortools: ${diag.ortools_version}`,
-      `script_exists: ${scriptExists}`,
-      `cwd: ${cwd}`,
-      `script: ${scriptPath}`,
-      "",
-      "--- STDOUT ---",
-      err.stdout ?? "(empty)",
-      "--- STDERR ---",
-      err.stderr ?? "(empty)",
-    ].join("\n");
-
+    const err = e as { stdout?: string; stderr?: string; message?: string };
+    const output = (err.stdout ?? "") + "\n" + (err.stderr ?? "");
+    console.error("[planner] local exec error:", output || err.message);
     return NextResponse.json(
-      { error: "El planificador falló", detail },
+      { error: "El planificador falló", detail: output || err.message },
       { status: 500 }
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// GET /api/plan — current planning state
+// ---------------------------------------------------------------------------
 
 export async function GET() {
   const user = await getUser();
@@ -121,9 +113,9 @@ export async function GET() {
     : 0;
 
   return NextResponse.json({
-    planned: count > 0,
+    planned:      count > 0,
     count,
-    hasPrevious: previousRun != null,
-    activeRunId: activeRun?.id ?? null,
+    hasPrevious:  previousRun != null,
+    activeRunId:  activeRun?.id ?? null,
   });
 }
