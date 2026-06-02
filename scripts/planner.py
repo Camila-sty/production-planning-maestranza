@@ -464,6 +464,14 @@ def main():
         start_weight = max(1, max_prio + 1 - prioridad) * PRIORITY_SCALE
         start_terms.append(starts[(ji, 0)] * start_weight)
 
+        # Gap tiebreaker: penalize late starts for all subsequent tasks (weight=1).
+        # Eliminates unnecessary idle time between consecutive processes when capacity
+        # is available but the solver has no other reason to start the next process
+        # early (e.g. when tardiness is the same regardless of gap).
+        # Weight=1 << PRIORITY_SCALE=1000, so priority ordering is always preserved.
+        for ti in range(1, len(tasks)):
+            start_terms.append(starts[(ji, ti)])
+
     all_terms = start_terms + tard_terms
     if all_terms:
         model.minimize(sum(all_terms))
