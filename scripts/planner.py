@@ -469,8 +469,12 @@ def main():
         # is available but the solver has no other reason to start the next process
         # early (e.g. when tardiness is the same regardless of gap).
         # Weight=1 << PRIORITY_SCALE=1000, so priority ordering is always preserved.
-        for ti in range(1, len(tasks)):
-            start_terms.append(starts[(ji, ti)])
+        # Uses weighted_sum (ortools explicit API) instead of appending raw IntVar
+        # objects to avoid type-mixing issues with Python sum() across ortools versions.
+        if len(tasks) > 1:
+            gap_vars    = [starts[(ji, ti)] for ti in range(1, len(tasks))]
+            gap_weights = [1] * len(gap_vars)
+            start_terms.append(cp_model.LinearExpr.weighted_sum(gap_vars, gap_weights))
 
     all_terms = start_terms + tard_terms
     if all_terms:
