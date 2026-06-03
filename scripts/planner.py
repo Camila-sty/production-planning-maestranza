@@ -367,6 +367,7 @@ def main():
     intervals: dict = {}
 
     restart_job_ids: set = set()
+    job_fmasks:      list = []
 
     for ji, (job, tasks) in enumerate(zip(jobs, job_tasks)):
         jid         = job["id"]
@@ -392,6 +393,8 @@ def main():
         else:
             fmask       = [False] * len(tasks)
             restart_day = None
+
+        job_fmasks.append(fmask)
 
         for ti, task in enumerate(tasks):
             if fmask[ti]:
@@ -438,8 +441,8 @@ def main():
             model.add_cumulative(ivs, dmds, capacity)
 
     # --- Objective ---
-    # start_weight: higher-priority jobs (lower prioridad number) must start earlier.
-    # Formula uses max_prio so the scale is always positive regardless of priority range (1..5 or 1..67).
+    # All free task starts are penalized by a priority-scaled weight (see below).
+    # max_prio normalizes the scale across any priority range (e.g. 1..5 or 1..67).
     PRIORITY_SCALE = 1_000
 
     tard_terms:  list = []
@@ -464,22 +467,27 @@ def main():
         tard_weight  = max(1, 100 // max(1, prioridad))
         tard_terms.append(tard * tard_weight)
 
-        # start_weight: ensures higher-priority jobs are scheduled first.
-        # (max_prio + 1 - prioridad) → P1 gets max_prio, P(max_prio) gets 1. Always ≥ 1.
-        start_weight = max(1, max_prio + 1 - prioridad) * PRIORITY_SCALE
-        start_terms.append(starts[(ji, 0)] * start_weight)
-
-        # Gap tiebreaker: penalize late starts for all subsequent tasks (weight=1).
-        # Eliminates unnecessary idle time between consecutive processes when capacity
-        # is available but the solver has no other reason to start the next process
-        # early (e.g. when tardiness is the same regardless of gap).
-        # Weight=1 << PRIORITY_SCALE=1000, so priority ordering is always preserved.
-        # Uses weighted_sum (ortools explicit API) instead of appending raw IntVar
-        # objects to avoid type-mixing issues with Python sum() across ortools versions.
-        if len(tasks) > 1:
-            gap_vars    = [starts[(ji, ti)] for ti in range(1, len(tasks))]
-            gap_weights = [1] * len(gap_vars)
-            start_terms.append(cp_model.LinearExpr.weighted_sum(gap_vars, gap_weights))
+        # Per-task start weight: apply priority weight to ALL free task starts (not
+        # just the first task). This forces the solver to compact every task towards
+        # its earliest feasible date. Any eligible job will fill a free process slot
+        # rather than wait, because delaying any task incurs a meaningful objective
+        # penalty proportional to priority. This eliminates "no idle capacity when
+        # eligible work exists" violations (e.g. PINTURA slot unused on Thu when
+        # OT is ready, just because higher-priority OTs aren't ready until Fri).
+        #
+        # Weight is divided by n_free so total per-job weight ≈ raw_weight regardless
+        # of chain length. This preserves priority ordering: a P1 job is always more
+        # expensive to delay than a P2 job, irrespective of task count.
+        #
+        # This approach also subsumes the old gap tiebreaker (weight=1 for subsequent
+        # tasks), which was too small for the solver to act on within the time budget.
+        fmask      = job_fmasks[ji]
+        raw_weight = max(1, max_prio + 1 - prioridad) * PRIORITY_SCALE
+        n_free     = sum(1 for f in fmask if not f)
+        per_task_w = max(1, raw_weight // max(1, n_free))
+        for ti in range(len(tasks)):
+            if not fmask[ti]:
+                start_terms.append(starts[(ji, ti)] * per_task_w)
 
     all_terms = start_terms + tard_terms
     if all_terms:
