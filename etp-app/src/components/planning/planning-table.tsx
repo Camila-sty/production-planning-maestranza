@@ -96,17 +96,31 @@ function fmtShort(iso: string): string {
 
 /** Content rendered inside the tooltip panel */
 function HistoryTooltip({ history }: { history: PlanRunHistoryEntry[] }) {
-  if (history.length === 0) {
-    return (
-      <p className="text-zinc-400 italic text-xs">Sin historial de fechas estimadas</p>
-    );
+  // Adjacent deduplication: only keep entries where endDate changed from the
+  // previous one. History arrives sorted oldest→newest (created_at ASC).
+  // If multiple consecutive runs share the same date, prefer the ACTIVE entry
+  // so the "Actual" amber label is shown when applicable.
+  const unique: PlanRunHistoryEntry[] = [];
+  let lastDate = "";
+  for (const h of history) {
+    const d = fmtShort(h.endDate);
+    if (d !== lastDate) {
+      unique.push(h);
+      lastDate = d;
+    } else if (h.status === "ACTIVE") {
+      unique[unique.length - 1] = h;
+    }
+  }
+
+  if (unique.length === 0) {
+    return <p className="text-zinc-400 italic text-xs">Sin historial de fechas estimadas</p>;
   }
   return (
     <div className="space-y-1.5 text-xs">
       <p className="text-zinc-300 font-semibold pb-1.5 border-b border-zinc-700/80">
         Historial de fechas estimadas
       </p>
-      {history.map((h, i) => {
+      {unique.map((h, i) => {
         const isActive = h.status === "ACTIVE";
         const isPrev   = h.status === "PREVIOUS";
         const label    = isActive ? "Actual" : isPrev ? "Anterior" : "Archivado";
@@ -132,31 +146,44 @@ function HistoryTooltip({ history }: { history: PlanRunHistoryEntry[] }) {
 }
 
 /**
- * Badge "Atrasado" with a portal-based tooltip that always stays within the
- * viewport. Uses getBoundingClientRect() + position:fixed to escape any
- * overflow:hidden ancestor (table, card, scroll container, etc.).
- * Flips horizontally when close to the right edge, vertically when close to
- * the top. Scrolls internally when the history list is long.
+ * Badge "Atrasado" with a portal-based tooltip that:
+ * - Renders at position:fixed via createPortal (escapes overflow:hidden ancestors)
+ * - Stays open while the mouse is over the badge OR the tooltip
+ * - Closes after a 250 ms delay once the mouse leaves both
+ * - Flips horizontally / vertically to stay within the viewport
+ * - Supports internal scroll for long history lists
  */
 function AtrasadoBadge({ history }: { history: PlanRunHistoryEntry[] }) {
   const [open, setOpen]   = useState(false);
   const [style, setStyle] = useState<React.CSSProperties>({});
-  const ref               = useRef<HTMLSpanElement>(null);
+  const badgeRef          = useRef<HTMLSpanElement>(null);
+  const hideTimer         = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleMouseEnter = useCallback(() => {
-    const el = ref.current;
+  // Clear any pending close timer
+  const cancelHide = useCallback(() => {
+    if (hideTimer.current) {
+      clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
+  }, []);
+
+  // Schedule close after 250 ms (cancelled if mouse re-enters badge or tooltip)
+  const scheduleHide = useCallback(() => {
+    cancelHide();
+    hideTimer.current = setTimeout(() => setOpen(false), 250);
+  }, [cancelHide]);
+
+  // Open tooltip: measure badge position, compute flip, set fixed coords
+  const handleBadgeEnter = useCallback(() => {
+    cancelHide();
+    const el = badgeRef.current;
     if (!el) return;
     const r  = el.getBoundingClientRect();
-    const TW = 296; // tooltip width in px
-
-    // Horizontal: left-align with badge; flip right-to-left if it would overflow
-    const flipX = r.left + TW > window.innerWidth - 12;
-
-    // Vertical: prefer above the badge; drop below only when there's more room below
+    const TW = 296;
+    const flipX      = r.left + TW > window.innerWidth - 12;
     const spaceAbove = r.top;
     const spaceBelow = window.innerHeight - r.bottom;
     const flipY      = spaceAbove < 180 && spaceBelow > spaceAbove;
-
     setStyle({
       position: "fixed",
       width: TW,
@@ -165,15 +192,16 @@ function AtrasadoBadge({ history }: { history: PlanRunHistoryEntry[] }) {
       ...(flipY ? { top: r.bottom + 8 }                 : { bottom: window.innerHeight - r.top + 8 }),
     });
     setOpen(true);
-  }, []);
+  }, [cancelHide]);
 
-  const handleMouseLeave = useCallback(() => setOpen(false), []);
+  // Cleanup timer on unmount
+  useEffect(() => cancelHide, [cancelHide]);
 
   return (
     <span
-      ref={ref}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
+      ref={badgeRef}
+      onMouseEnter={handleBadgeEnter}
+      onMouseLeave={scheduleHide}
       className="inline-block cursor-help"
     >
       <Badge className="text-xs bg-red-500/20 text-red-400 border border-red-500/30 select-none">
@@ -182,7 +210,9 @@ function AtrasadoBadge({ history }: { history: PlanRunHistoryEntry[] }) {
       {open && createPortal(
         <div
           style={style}
-          className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-3 shadow-2xl max-h-72 overflow-y-auto pointer-events-none"
+          onMouseEnter={cancelHide}
+          onMouseLeave={scheduleHide}
+          className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-3 shadow-2xl max-h-72 overflow-y-auto"
         >
           <HistoryTooltip history={history} />
         </div>,
