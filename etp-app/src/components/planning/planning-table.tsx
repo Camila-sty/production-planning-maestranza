@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { deleteRecord, upsertBuffer } from "@/actions/sales-planning";
 import { Button } from "@/components/ui/button";
@@ -93,28 +94,101 @@ function fmtShort(iso: string): string {
   return `${String(day).padStart(2, "0")}-${String(m).padStart(2, "0")}-${y}`;
 }
 
-/** Tooltip with history of estimated end dates */
+/** Content rendered inside the tooltip panel */
 function HistoryTooltip({ history }: { history: PlanRunHistoryEntry[] }) {
   if (history.length === 0) {
     return (
-      <div className="text-zinc-400 italic">Sin historial anterior de fechas estimadas</div>
+      <p className="text-zinc-400 italic text-xs">Sin historial de fechas estimadas</p>
     );
   }
-
-  // Show all entries — mark ACTIVE as "Actual"
   return (
-    <div className="space-y-1">
-      <div className="text-zinc-300 font-medium mb-2">Historial de fechas estimadas:</div>
+    <div className="space-y-1.5 text-xs">
+      <p className="text-zinc-300 font-semibold pb-1.5 border-b border-zinc-700/80">
+        Historial de fechas estimadas
+      </p>
       {history.map((h, i) => {
         const isActive = h.status === "ACTIVE";
+        const isPrev   = h.status === "PREVIOUS";
+        const label    = isActive ? "Actual" : isPrev ? "Anterior" : "Archivado";
         return (
-          <div key={i} className={`flex justify-between gap-4 ${isActive ? "text-amber-400 font-semibold" : "text-zinc-400"}`}>
-            <span>{isActive ? "Actual" : fmtShort(h.runDate)}</span>
-            <span>{fmtShort(h.endDate)}</span>
+          <div
+            key={i}
+            className={`flex items-center justify-between gap-4 ${
+              isActive ? "text-amber-400 font-semibold" :
+              isPrev   ? "text-zinc-300" :
+                         "text-zinc-500"
+            }`}
+          >
+            <span className="shrink-0">
+              {label}
+              <span className="ml-1 font-normal text-zinc-600">(v{h.version})</span>
+            </span>
+            <span className="tabular-nums font-mono">{fmtShort(h.endDate)}</span>
           </div>
         );
       })}
     </div>
+  );
+}
+
+/**
+ * Badge "Atrasado" with a portal-based tooltip that always stays within the
+ * viewport. Uses getBoundingClientRect() + position:fixed to escape any
+ * overflow:hidden ancestor (table, card, scroll container, etc.).
+ * Flips horizontally when close to the right edge, vertically when close to
+ * the top. Scrolls internally when the history list is long.
+ */
+function AtrasadoBadge({ history }: { history: PlanRunHistoryEntry[] }) {
+  const [open, setOpen]   = useState(false);
+  const [style, setStyle] = useState<React.CSSProperties>({});
+  const ref               = useRef<HTMLSpanElement>(null);
+
+  const handleMouseEnter = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    const r  = el.getBoundingClientRect();
+    const TW = 296; // tooltip width in px
+
+    // Horizontal: left-align with badge; flip right-to-left if it would overflow
+    const flipX = r.left + TW > window.innerWidth - 12;
+
+    // Vertical: prefer above the badge; drop below only when there's more room below
+    const spaceAbove = r.top;
+    const spaceBelow = window.innerHeight - r.bottom;
+    const flipY      = spaceAbove < 180 && spaceBelow > spaceAbove;
+
+    setStyle({
+      position: "fixed",
+      width: TW,
+      zIndex: 9999,
+      ...(flipX ? { right: window.innerWidth - r.right } : { left: r.left }),
+      ...(flipY ? { top: r.bottom + 8 }                 : { bottom: window.innerHeight - r.top + 8 }),
+    });
+    setOpen(true);
+  }, []);
+
+  const handleMouseLeave = useCallback(() => setOpen(false), []);
+
+  return (
+    <span
+      ref={ref}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      className="inline-block cursor-help"
+    >
+      <Badge className="text-xs bg-red-500/20 text-red-400 border border-red-500/30 select-none">
+        Atrasado
+      </Badge>
+      {open && createPortal(
+        <div
+          style={style}
+          className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-3 shadow-2xl max-h-72 overflow-y-auto pointer-events-none"
+        >
+          <HistoryTooltip history={history} />
+        </div>,
+        document.body,
+      )}
+    </span>
   );
 }
 
@@ -458,17 +532,7 @@ export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: Plan
                   {/* Estado — Al día / Atrasado based on buffer */}
                   <td className="px-3 py-2.5">
                     {isAtrasado ? (
-                      <div className="relative group inline-block">
-                        <Badge className="text-xs bg-red-500/20 text-red-400 border border-red-500/30 cursor-help select-none">
-                          Atrasado
-                        </Badge>
-                        {/* Tooltip */}
-                        <div className="absolute z-50 hidden group-hover:block bottom-full left-0 mb-2 w-64 bg-zinc-900 border border-zinc-700 rounded-lg p-3 text-xs shadow-2xl pointer-events-none">
-                          <HistoryTooltip history={history} />
-                          {/* Arrow */}
-                          <div className="absolute top-full left-4 w-2 h-2 bg-zinc-900 border-r border-b border-zinc-700 rotate-45 -mt-1" />
-                        </div>
-                      </div>
+                      <AtrasadoBadge history={history} />
                     ) : (
                       <Badge className="text-xs bg-green-500/15 text-green-400 border border-green-500/25">
                         Al día
