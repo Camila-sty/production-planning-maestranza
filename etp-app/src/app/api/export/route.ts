@@ -92,6 +92,30 @@ function procColor(label: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Priority sort helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse a priority value to a sortable number.
+ * Handles: number (14), string "14", string "P14".
+ * Null / invalid → Infinity (sorted to the end).
+ */
+function parsePriority(val: number | string | null | undefined): number {
+  if (val == null || val === "") return Infinity;
+  if (typeof val === "number") return isNaN(val) ? Infinity : val;
+  const match = String(val).match(/\d+/);
+  return match ? parseInt(match[0], 10) : Infinity;
+}
+
+function sortByPriority<T extends OptRow>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => {
+    const pa = parsePriority(a.prioridad ?? a.sales_planning?.prioridad);
+    const pb = parsePriority(b.prioridad ?? b.sales_planning?.prioridad);
+    return pa - pb;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Route handler
 // ---------------------------------------------------------------------------
 
@@ -224,13 +248,13 @@ export async function GET() {
   // =========================================================================
   // Sheet 3 — Planificación Optima (Gantt with slots)
   // =========================================================================
-  buildGanttSheet(wb, "Planificación Optima", optimized, schedules, activeRun?.created_at);
+  buildGanttSheet(wb, "Planificación Optima", sortByPriority(optimized), schedules, activeRun?.created_at);
 
   // =========================================================================
   // Sheet 4 — Planificación Optima Anterior (if exists)
   // =========================================================================
   if (previousRun && prevOptimized.length > 0) {
-    buildGanttSheet(wb, "Planificación Optima Anterior", prevOptimized, prevSchedules, previousRun.created_at);
+    buildGanttSheet(wb, "Planificación Optima Anterior", sortByPriority(prevOptimized), prevSchedules, previousRun.created_at);
   } else if (previousRun) {
     const wsPrev = wb.addWorksheet("Planificación Optima Anterior");
     wsPrev.addRow(["Sin datos de planificación anterior disponibles."]);
