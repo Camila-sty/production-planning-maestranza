@@ -143,7 +143,7 @@ def run_dispatch(
     date_index: dict,
     buffer_at_map: dict,
     prev_schedule_map: dict,
-) -> tuple:
+) -> dict:
     """
     Forward-pass finite-capacity dispatch heuristic.
 
@@ -157,13 +157,14 @@ def run_dispatch(
          Priority only competes among jobs eligible on the same day —
          higher-priority jobs that are not yet ready cannot block slots.
 
-    Frozen tasks from buffer/restart jobs are pre-scheduled before the
-    forward pass begins.
+    When planning_buffer_days < 0 for a job, the job's effective earliest
+    start day is delayed by abs(buffer_days) working days past the buffer_at
+    date.  This is applied as a scheduling constraint (no freeze/replay).
+    The caller applies a matching floor to end_date after dispatch.
 
     Returns
     -------
-    scheduled   : dict (ji, ti) -> (start_day, end_day)  [end_day exclusive]
-    restart_ids : set of job ids that used the restart/buffer path
+    scheduled : dict (ji, ti) -> (start_day, end_day)  [end_day exclusive]
     """
     ordered_procs = sorted(proc_list, key=lambda p: p["orden"])
     proc_cap      = {p["proceso"]: p["capacidad_por_dia"] for p in proc_list}
@@ -171,41 +172,19 @@ def run_dispatch(
         date_to_workday(j["llegada"], calendar, date_index) for j in jobs
     ]
 
-    scheduled:       dict = {}  # (ji, ti) -> (start_day, end_day)
-    restart_ids:     set  = set()
-    restart_min_day: dict = {}  # ji -> min calendar-day index for first free task
-    first_free_ti:   dict = {}  # ji -> task index of first free task
+    scheduled: dict = {}  # (ji, ti) -> (start_day, end_day)
 
-    # ── Pre-schedule frozen tasks (buffer/restart jobs) ───────────────────
+    # ── Compute effective minimum start day for negatively-buffered jobs ──
+    effective_min_start: dict = {}
     for ji, (job, tasks) in enumerate(zip(jobs, job_tasks)):
-        jid    = job["id"]
         buf    = job.get("buffer", 0)
-        buf_at = buffer_at_map.get(jid)
-        prev   = prev_schedule_map.get(jid, {})
-
-        if not (buf != 0 and buf_at is not None and prev and tasks):
-            continue
-
-        restart_ids.add(jid)
-
-        for ti, task in enumerate(tasks):
-            ps = prev.get(task["proceso"])
-            if ps and ps["end_date"] < buf_at:
-                fs = date_to_workday(ps["start_date"], calendar, date_index)
-                fe = date_to_workday(ps["end_date"],   calendar, date_index) + 1
-                scheduled[(ji, ti)] = (fs, fe)
-
-        rd = (
-            add_workdays(buf_at, abs(buf), calendar, date_index)
-            if buf < 0
-            else subtract_workdays(buf_at, buf, calendar, date_index)
-        )
-        restart_min_day[ji] = date_to_workday(rd, calendar, date_index)
-
-        fft = 0
-        while fft < len(tasks) and (ji, fft) in scheduled:
-            fft += 1
-        first_free_ti[ji] = fft
+        buf_at = buffer_at_map.get(job["id"])
+        if buf < 0 and buf_at is not None and tasks:
+            buf_at_day = date_to_workday(buf_at, calendar, date_index)
+            delay_day  = buf_at_day + abs(buf)
+            eff        = max(llegada_days[ji], delay_day)
+            if eff > llegada_days[ji]:
+                effective_min_start[ji] = eff
 
     # ── Validation targets ────────────────────────────────────────────────
     WATCH_OTS  = {"2372", "2411", "2412"}
@@ -236,15 +215,13 @@ def run_dispatch(
                     continue                        # all tasks done
                 if jtasks[ti]["proceso"] != pname:
                     continue                        # next task is a different process
-                if llegada_days[ji2] > d:
-                    continue                        # equipment not arrived yet
+                min_start = effective_min_start.get(ji2, llegada_days[ji2])
+                if min_start > d:
+                    continue                        # not arrived / buffer delay
                 if ti > 0:
                     ps2 = scheduled.get((ji2, ti - 1))
                     if ps2 is None or ps2[1] > d:
                         continue                    # predecessor not finished
-                if ji2 in restart_min_day and ti == first_free_ti.get(ji2, 0):
-                    if d < restart_min_day[ji2]:
-                        continue                    # restart buffer window not open
                 eligible.append(ji2)
 
             eligible.sort(key=lambda ji2: (
@@ -268,8 +245,9 @@ def run_dispatch(
                         wreason = "already finished"
                     elif job_tasks[wji][wti]["proceso"] != pname:
                         wreason = f"next process={job_tasks[wji][wti]['proceso']}"
-                    elif llegada_days[wji] > d:
-                        wreason = f"not arrived (llegada day {llegada_days[wji]} > {d})"
+                    elif effective_min_start.get(wji, llegada_days[wji]) > d:
+                        ms = effective_min_start.get(wji, llegada_days[wji])
+                        wreason = f"not ready (min start day {ms} > {d})"
                     elif wti > 0:
                         ps3 = scheduled.get((wji, wti - 1))
                         if ps3 is None or ps3[1] > d:
@@ -277,9 +255,6 @@ def run_dispatch(
                                        f"{ps3[1] if ps3 else 'unscheduled'} > {d}")
                         else:
                             wreason = "ELIGIBLE"
-                    elif (wji in restart_min_day and wti == first_free_ti.get(wji, 0)
-                          and d < restart_min_day[wji]):
-                        wreason = f"restart constraint (min day {restart_min_day[wji]})"
                     else:
                         wreason = "ELIGIBLE"
                     if wreason == "ELIGIBLE":
@@ -301,7 +276,7 @@ def run_dispatch(
                 dur = jtasks2[ti]["duration"]
                 scheduled[(ji2, ti)] = (d, d + dur)
 
-    return scheduled, restart_ids
+    return scheduled
 
 
 # ---------------------------------------------------------------------------
@@ -526,10 +501,29 @@ def main():
 
     # --- Dispatch ---
     print("Dispatching (finite-capacity daily heuristic)...")
-    scheduled, restart_job_ids = run_dispatch(
+    scheduled = run_dispatch(
         jobs, job_tasks, proc_list, calendar, date_index,
         buffer_at_map, prev_schedule_map,
     )
+
+    # Compute end_date floors for jobs with negative buffer
+    end_date_floor: dict = {}
+    for ji, (job, tasks) in enumerate(zip(jobs, job_tasks)):
+        if not tasks:
+            continue
+        buf = job["buffer"]
+        if buf >= 0:
+            continue
+        prev_sched = prev_schedule_map.get(job["id"])
+        if not prev_sched:
+            continue
+        prev_end = max(
+            (ps["end_date"] for ps in prev_sched.values() if ps.get("end_date")),
+            default=None,
+        )
+        if prev_end is None:
+            continue
+        end_date_floor[ji] = add_workdays(prev_end, abs(buf), calendar, date_index)
 
     incomplete = [
         ji for ji, tasks in enumerate(job_tasks)
@@ -582,6 +576,8 @@ def main():
             job_end_day    = scheduled[(ji, last_ti)][1]
             job_start_date = workday_to_date(job_start_day,   calendar)
             job_end_date   = workday_to_date(job_end_day - 1, calendar)
+            if ji in end_date_floor and job_end_date < end_date_floor[ji]:
+                job_end_date = end_date_floor[ji]
 
             opt_id = f"opt_{new_run_id[-8:]}_{job['id'][:12]}_{ji}"
             cur.execute("""
@@ -615,11 +611,9 @@ def main():
                 ))
 
             buf = job["buffer"]
-            tag = ""
-            if job["id"] in restart_job_ids:
-                tag = " [restart]"
-            elif buf != 0:
-                tag = f" | buf={buf:+d}d"
+            tag = f" | buf={buf:+d}d" if buf != 0 else ""
+            if ji in end_date_floor:
+                tag += " [floored]"
             print(f"  Job {ji+1}: {job['id'][:8]}… | {job['codigo_plazo']:>4} | "
                   f"{job_start_date} → {job_end_date} | P{job['prioridad']}{tag}")
 

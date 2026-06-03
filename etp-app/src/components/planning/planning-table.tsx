@@ -119,12 +119,12 @@ function HistoryTooltip({ history }: { history: PlanRunHistoryEntry[] }) {
   return (
     <div className="text-xs">
       <p className="text-zinc-300 font-semibold pb-1.5 mb-1.5 border-b border-zinc-700/80">
-        Historial de fechas estimadas
+        Historial de entregas estimadas
       </p>
       {/* Column headers */}
       <div className="flex justify-between gap-4 mb-1 text-zinc-500 font-medium">
         <span>Modificación</span>
-        <span>Fecha estimada</span>
+        <span>Entrega Estimada</span>
       </div>
       {unique.map(({ entry: h, isCurrent }, i) => (
         <div
