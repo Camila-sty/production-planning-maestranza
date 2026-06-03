@@ -96,51 +96,47 @@ function fmtShort(iso: string): string {
 
 /** Content rendered inside the tooltip panel */
 function HistoryTooltip({ history }: { history: PlanRunHistoryEntry[] }) {
-  // Adjacent deduplication: only keep entries where endDate changed from the
-  // previous one. History arrives sorted oldest→newest (created_at ASC).
-  // If multiple consecutive runs share the same date, prefer the ACTIVE entry
-  // so the "Actual" amber label is shown when applicable.
-  const unique: PlanRunHistoryEntry[] = [];
-  let lastDate = "";
+  // Deduplicate by endDate: keep the FIRST occurrence (oldest runDate = earliest
+  // moment that endDate appeared). Mark the row as "current" if any run with
+  // that endDate is ACTIVE, so we can highlight it without showing a status label.
+  // History arrives sorted oldest→newest (created_at ASC from page.tsx query).
+  const seen = new Map<string, { entry: PlanRunHistoryEntry; isCurrent: boolean }>();
   for (const h of history) {
-    const d = fmtShort(h.endDate);
-    if (d !== lastDate) {
-      unique.push(h);
-      lastDate = d;
+    const key = fmtShort(h.endDate);
+    if (!seen.has(key)) {
+      seen.set(key, { entry: h, isCurrent: h.status === "ACTIVE" });
     } else if (h.status === "ACTIVE") {
-      unique[unique.length - 1] = h;
+      // Keep the original (oldest) entry's runDate but flag as current run
+      const prev = seen.get(key)!;
+      seen.set(key, { entry: prev.entry, isCurrent: true });
     }
   }
+  const unique = Array.from(seen.values());
 
   if (unique.length === 0) {
     return <p className="text-zinc-400 italic text-xs">Sin historial de fechas estimadas</p>;
   }
   return (
-    <div className="space-y-1.5 text-xs">
-      <p className="text-zinc-300 font-semibold pb-1.5 border-b border-zinc-700/80">
+    <div className="text-xs">
+      <p className="text-zinc-300 font-semibold pb-1.5 mb-1.5 border-b border-zinc-700/80">
         Historial de fechas estimadas
       </p>
-      {unique.map((h, i) => {
-        const isActive = h.status === "ACTIVE";
-        const isPrev   = h.status === "PREVIOUS";
-        const label    = isActive ? "Actual" : isPrev ? "Anterior" : "Archivado";
-        return (
-          <div
-            key={i}
-            className={`flex items-center justify-between gap-4 ${
-              isActive ? "text-amber-400 font-semibold" :
-              isPrev   ? "text-zinc-300" :
-                         "text-zinc-500"
-            }`}
-          >
-            <span className="shrink-0">
-              {label}
-              <span className="ml-1 font-normal text-zinc-600">(v{h.version})</span>
-            </span>
-            <span className="tabular-nums font-mono">{fmtShort(h.endDate)}</span>
-          </div>
-        );
-      })}
+      {/* Column headers */}
+      <div className="flex justify-between gap-4 mb-1 text-zinc-500 font-medium">
+        <span>Modificación</span>
+        <span>Fecha estimada</span>
+      </div>
+      {unique.map(({ entry: h, isCurrent }, i) => (
+        <div
+          key={i}
+          className={`flex items-center justify-between gap-4 py-0.5 ${
+            isCurrent ? "text-amber-400 font-semibold" : "text-zinc-400"
+          }`}
+        >
+          <span className="tabular-nums font-mono">{fmtShort(h.runDate)}</span>
+          <span className="tabular-nums font-mono">{fmtShort(h.endDate)}</span>
+        </div>
+      ))}
     </div>
   );
 }
