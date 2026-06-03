@@ -18,12 +18,6 @@ from datetime import date, timedelta, datetime, timezone
 from pathlib import Path
 
 try:
-    from ortools.sat.python import cp_model
-except ImportError:
-    print("ERROR: ortools not installed. Run: pip3 install ortools")
-    sys.exit(1)
-
-try:
     import psycopg2
     import psycopg2.extras
 except ImportError:
@@ -138,7 +132,180 @@ def to_date(v) -> "date | None":
 
 
 # ---------------------------------------------------------------------------
-# Main solver
+# Daily finite-capacity dispatch heuristic
+# ---------------------------------------------------------------------------
+
+def run_dispatch(
+    jobs: list,
+    job_tasks: list,
+    proc_list: list,
+    calendar: list,
+    date_index: dict,
+    buffer_at_map: dict,
+    prev_schedule_map: dict,
+) -> tuple:
+    """
+    Forward-pass finite-capacity dispatch heuristic.
+
+    Each working day, for each process (in proc order):
+      1. Count active slots (tasks already running today).
+      2. Collect eligible jobs: next pending process = this process,
+         arrived, predecessor finished at or before today.
+      3. Sort eligible: prioridad ASC, llegada ASC, id ASC.
+      4. Assign available slots in priority order.
+         No capacity is left idle while eligible work exists.
+         Priority only competes among jobs eligible on the same day —
+         higher-priority jobs that are not yet ready cannot block slots.
+
+    Frozen tasks from buffer/restart jobs are pre-scheduled before the
+    forward pass begins.
+
+    Returns
+    -------
+    scheduled   : dict (ji, ti) -> (start_day, end_day)  [end_day exclusive]
+    restart_ids : set of job ids that used the restart/buffer path
+    """
+    ordered_procs = sorted(proc_list, key=lambda p: p["orden"])
+    proc_cap      = {p["proceso"]: p["capacidad_por_dia"] for p in proc_list}
+    llegada_days  = [
+        date_to_workday(j["llegada"], calendar, date_index) for j in jobs
+    ]
+
+    scheduled:       dict = {}  # (ji, ti) -> (start_day, end_day)
+    restart_ids:     set  = set()
+    restart_min_day: dict = {}  # ji -> min calendar-day index for first free task
+    first_free_ti:   dict = {}  # ji -> task index of first free task
+
+    # ── Pre-schedule frozen tasks (buffer/restart jobs) ───────────────────
+    for ji, (job, tasks) in enumerate(zip(jobs, job_tasks)):
+        jid    = job["id"]
+        buf    = job.get("buffer", 0)
+        buf_at = buffer_at_map.get(jid)
+        prev   = prev_schedule_map.get(jid, {})
+
+        if not (buf != 0 and buf_at is not None and prev and tasks):
+            continue
+
+        restart_ids.add(jid)
+
+        for ti, task in enumerate(tasks):
+            ps = prev.get(task["proceso"])
+            if ps and ps["end_date"] < buf_at:
+                fs = date_to_workday(ps["start_date"], calendar, date_index)
+                fe = date_to_workday(ps["end_date"],   calendar, date_index) + 1
+                scheduled[(ji, ti)] = (fs, fe)
+
+        rd = (
+            add_workdays(buf_at, abs(buf), calendar, date_index)
+            if buf < 0
+            else subtract_workdays(buf_at, buf, calendar, date_index)
+        )
+        restart_min_day[ji] = date_to_workday(rd, calendar, date_index)
+
+        fft = 0
+        while fft < len(tasks) and (ji, fft) in scheduled:
+            fft += 1
+        first_free_ti[ji] = fft
+
+    # ── Validation targets ────────────────────────────────────────────────
+    WATCH_OTS  = {"2372", "2411", "2412"}
+    watch_ji   = {ji for ji, j in enumerate(jobs) if j.get("ot", "") in WATCH_OTS}
+    target_day = date_index.get(date(2026, 5, 28))  # None when outside calendar
+
+    # ── Forward pass: one working day at a time ───────────────────────────
+    for d in range(len(calendar)):
+        for proc in ordered_procs:
+            pname = proc["proceso"]
+            cap   = proc_cap[pname]
+
+            # Slots already occupied today by in-progress tasks
+            active = sum(
+                1 for (jj, tt), (sd, ed) in scheduled.items()
+                if job_tasks[jj][tt]["proceso"] == pname and sd <= d < ed
+            )
+            avail = cap - active
+
+            # Build eligible list for this process on day d
+            eligible = []
+            for ji2, (job2, jtasks) in enumerate(zip(jobs, job_tasks)):
+                # Next unscheduled task index
+                ti = 0
+                while ti < len(jtasks) and (ji2, ti) in scheduled:
+                    ti += 1
+                if ti >= len(jtasks):
+                    continue                        # all tasks done
+                if jtasks[ti]["proceso"] != pname:
+                    continue                        # next task is a different process
+                if llegada_days[ji2] > d:
+                    continue                        # equipment not arrived yet
+                if ti > 0:
+                    ps2 = scheduled.get((ji2, ti - 1))
+                    if ps2 is None or ps2[1] > d:
+                        continue                    # predecessor not finished
+                if ji2 in restart_min_day and ti == first_free_ti.get(ji2, 0):
+                    if d < restart_min_day[ji2]:
+                        continue                    # restart buffer window not open
+                eligible.append(ji2)
+
+            eligible.sort(key=lambda ji2: (
+                jobs[ji2]["prioridad"],
+                jobs[ji2]["llegada"],
+                jobs[ji2]["id"],
+            ))
+
+            # Validation logging — PINTURA on 28-05-2026
+            if d == target_day and pname == "PINTURA":
+                print(f"  [VALIDATE] PINTURA on {calendar[d]}:"
+                      f" cap={cap}, active={active}, avail={avail},"
+                      f" eligible={len(eligible)}")
+                for wji in sorted(watch_ji, key=lambda x: jobs[x].get("ot", "")):
+                    wj   = jobs[wji]
+                    wot  = wj.get("ot", "?")
+                    wti  = 0
+                    while wti < len(job_tasks[wji]) and (wji, wti) in scheduled:
+                        wti += 1
+                    if wti >= len(job_tasks[wji]):
+                        wreason = "already finished"
+                    elif job_tasks[wji][wti]["proceso"] != pname:
+                        wreason = f"next process={job_tasks[wji][wti]['proceso']}"
+                    elif llegada_days[wji] > d:
+                        wreason = f"not arrived (llegada day {llegada_days[wji]} > {d})"
+                    elif wti > 0:
+                        ps3 = scheduled.get((wji, wti - 1))
+                        if ps3 is None or ps3[1] > d:
+                            wreason = (f"predecessor ends day "
+                                       f"{ps3[1] if ps3 else 'unscheduled'} > {d}")
+                        else:
+                            wreason = "ELIGIBLE"
+                    elif (wji in restart_min_day and wti == first_free_ti.get(wji, 0)
+                          and d < restart_min_day[wji]):
+                        wreason = f"restart constraint (min day {restart_min_day[wji]})"
+                    else:
+                        wreason = "ELIGIBLE"
+                    if wreason == "ELIGIBLE":
+                        rank = eligible.index(wji) if wji in eligible else -1
+                        wreason += (f" rank={rank + 1}"
+                                    + (" → ASSIGNED" if 0 <= rank < avail
+                                       else " → capacity full"))
+                    print(f"    OT {wot} (P{wj['prioridad']}): {wreason}")
+
+            if avail <= 0:
+                continue
+
+            # Assign available slots in priority order (no idle capacity)
+            for ji2 in eligible[:avail]:
+                jtasks2 = job_tasks[ji2]
+                ti = 0
+                while ti < len(jtasks2) and (ji2, ti) in scheduled:
+                    ti += 1
+                dur = jtasks2[ti]["duration"]
+                scheduled[(ji2, ti)] = (d, d + dur)
+
+    return scheduled, restart_ids
+
+
+# ---------------------------------------------------------------------------
+# Main
 # ---------------------------------------------------------------------------
 
 def main():
@@ -285,7 +452,7 @@ def main():
 
     # --- Load jobs ---
     cur.execute("""
-        SELECT id, codigo_plazo, llegada, prioridad, atraso
+        SELECT id, ot, codigo_plazo, llegada, prioridad, atraso
         FROM sales_planning
         WHERE codigo_plazo IS NOT NULL
           AND llegada    IS NOT NULL
@@ -301,6 +468,7 @@ def main():
             continue
         jobs.append({
             "id":           j["id"],
+            "ot":           str(j["ot"]).strip() if j["ot"] is not None else "",
             "codigo_plazo": str(j["codigo_plazo"]).strip(),
             "llegada":      llegada_date,
             "prioridad":    int(j["prioridad"]) if j["prioridad"] else 5,
@@ -320,9 +488,6 @@ def main():
         print("No plannable jobs found (need codigo_plazo + llegada + prioridad).")
         conn.close()
         return
-
-    # Max priority value across jobs — used to scale objective correctly for any range (e.g. 1..67)
-    max_prio = max(j["prioridad"] for j in jobs)
 
     # --- Build task list per job ---
     job_tasks: list = []
@@ -359,151 +524,18 @@ def main():
     print(f"Jobs: {len(jobs)}  |  Processes: {len(proc_list)}  |  Calendar size: {CAL_SIZE} working days")
     print(f"Reference date: {ref_date}")
 
-    # --- Build CP-SAT model ---
-    model = cp_model.CpModel()
+    # --- Dispatch ---
+    print("Dispatching (finite-capacity daily heuristic)...")
+    scheduled, restart_job_ids = run_dispatch(
+        jobs, job_tasks, proc_list, calendar, date_index,
+        buffer_at_map, prev_schedule_map,
+    )
 
-    starts:    dict = {}
-    ends:      dict = {}
-    intervals: dict = {}
-
-    restart_job_ids: set = set()
-    job_fmasks:      list = []
-
-    for ji, (job, tasks) in enumerate(zip(jobs, job_tasks)):
-        jid         = job["id"]
-        buf         = job["buffer"]
-        buf_at      = buffer_at_map.get(jid)
-        prev_sched  = prev_schedule_map.get(jid, {})
-        llegada_day = date_to_workday(job["llegada"], calendar, date_index)
-
-        use_restart = buf != 0 and buf_at is not None and bool(prev_sched) and bool(tasks)
-
-        if use_restart:
-            restart_job_ids.add(jid)
-            fmask = []
-            for task in tasks:
-                prev = prev_sched.get(task["proceso"])
-                fmask.append(bool(prev and prev["end_date"] < buf_at))
-
-            if buf < 0:
-                restart_d = add_workdays(buf_at, abs(buf), calendar, date_index)
-            else:
-                restart_d = subtract_workdays(buf_at, buf, calendar, date_index)
-            restart_day = date_to_workday(restart_d, calendar, date_index)
-        else:
-            fmask       = [False] * len(tasks)
-            restart_day = None
-
-        job_fmasks.append(fmask)
-
-        for ti, task in enumerate(tasks):
-            if fmask[ti]:
-                prev = prev_sched[task["proceso"]]
-                fs   = date_to_workday(prev["start_date"], calendar, date_index)
-                fe   = date_to_workday(prev["end_date"],   calendar, date_index) + 1
-                dur  = max(1, fe - fs)
-                s    = model.new_int_var(fs, fs, f"s_{ji}_{ti}")
-                e    = model.new_int_var(fe, fe, f"e_{ji}_{ti}")
-                iv   = model.new_interval_var(s, dur, e, f"iv_{ji}_{ti}")
-            else:
-                dur = task["duration"]
-                s   = model.new_int_var(llegada_day, CAL_SIZE,       f"s_{ji}_{ti}")
-                e   = model.new_int_var(llegada_day, CAL_SIZE + dur, f"e_{ji}_{ti}")
-                iv  = model.new_interval_var(s, dur, e,              f"iv_{ji}_{ti}")
-
-            starts[(ji, ti)]    = s
-            ends[(ji, ti)]      = e
-            intervals[(ji, ti)] = iv
-
-        if tasks:
-            if not fmask[0]:
-                model.add(starts[(ji, 0)] >= llegada_day)
-
-            for ti in range(1, len(tasks)):
-                model.add(starts[(ji, ti)] >= ends[(ji, ti - 1)])
-
-            if restart_day is not None:
-                first_free = next((ti for ti, f in enumerate(fmask) if not f), None)
-                if first_free is not None:
-                    model.add(starts[(ji, first_free)] >= restart_day)
-
-    # --- Capacity constraints ---
-    for proc in proc_list:
-        pname    = proc["proceso"]
-        capacity = proc["capacidad_por_dia"]
-        ivs, dmds = [], []
-        for ji, tasks in enumerate(job_tasks):
-            for ti, task in enumerate(tasks):
-                if task["proceso"] == pname:
-                    ivs.append(intervals[(ji, ti)])
-                    dmds.append(1)
-        if ivs:
-            model.add_cumulative(ivs, dmds, capacity)
-
-    # --- Objective ---
-    # All free task starts are penalized by a priority-scaled weight (see below).
-    # max_prio normalizes the scale across any priority range (e.g. 1..5 or 1..67).
-    PRIORITY_SCALE = 1_000
-
-    tard_terms:  list = []
-    start_terms: list = []
-
-    for ji, (job, tasks) in enumerate(zip(jobs, job_tasks)):
-        if not tasks:
-            continue
-        total_dur   = sum(t["duration"] for t in tasks)
-        llegada_day = date_to_workday(job["llegada"], calendar, date_index)
-
-        effective_buf = 0 if job["id"] in restart_job_ids else job["buffer"]
-        atraso        = job["atraso"] + effective_buf
-        due_day       = llegada_day + total_dur + atraso
-        prioridad     = job["prioridad"]
-
-        last_ti = len(tasks) - 1
-        tard    = model.new_int_var(0, CAL_SIZE * 2, f"tard_{ji}")
-        model.add_max_equality(tard, [ends[(ji, last_ti)] - due_day, 0])
-
-        # tard_weight: P1 penalizes tardiness most; decreases with priority number
-        tard_weight  = max(1, 100 // max(1, prioridad))
-        tard_terms.append(tard * tard_weight)
-
-        # Per-task start weight: apply priority weight to ALL free task starts (not
-        # just the first task). This forces the solver to compact every task towards
-        # its earliest feasible date. Any eligible job will fill a free process slot
-        # rather than wait, because delaying any task incurs a meaningful objective
-        # penalty proportional to priority. This eliminates "no idle capacity when
-        # eligible work exists" violations (e.g. PINTURA slot unused on Thu when
-        # OT is ready, just because higher-priority OTs aren't ready until Fri).
-        #
-        # Weight is divided by n_free so total per-job weight ≈ raw_weight regardless
-        # of chain length. This preserves priority ordering: a P1 job is always more
-        # expensive to delay than a P2 job, irrespective of task count.
-        #
-        # This approach also subsumes the old gap tiebreaker (weight=1 for subsequent
-        # tasks), which was too small for the solver to act on within the time budget.
-        fmask      = job_fmasks[ji]
-        raw_weight = max(1, max_prio + 1 - prioridad) * PRIORITY_SCALE
-        n_free     = sum(1 for f in fmask if not f)
-        per_task_w = max(1, raw_weight // max(1, n_free))
-        for ti in range(len(tasks)):
-            if not fmask[ti]:
-                start_terms.append(starts[(ji, ti)] * per_task_w)
-
-    all_terms = start_terms + tard_terms
-    if all_terms:
-        model.minimize(sum(all_terms))
-
-    # --- Solve ---
-    solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 30.0
-    solver.parameters.num_search_workers  = 4
-    solver.parameters.log_search_progress = False
-
-    print("Solving...")
-    status = solver.solve(model)
-
-    if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        # Rollback
+    incomplete = [
+        ji for ji, tasks in enumerate(job_tasks)
+        if tasks and not all((ji, ti) in scheduled for ti in range(len(tasks)))
+    ]
+    if incomplete:
         cur.execute("""
             UPDATE planning_run SET status = 'ACTIVE'
             WHERE id = (
@@ -513,19 +545,20 @@ def main():
         """)
         cur.execute("UPDATE planning_run SET status = 'ARCHIVED' WHERE id = %s", (new_run_id,))
         conn.commit()
-        print(f"No solution found. Status: {solver.status_name(status)}")
+        for ji in incomplete:
+            print(f"  ERROR: Job {jobs[ji]['id'][:8]}… tasks unscheduled (calendar too short?).")
+        print("Planning rolled back.")
         conn.close()
         sys.exit(1)
 
-    print(f"Solution: {solver.status_name(status)}  |  Objective: {solver.objective_value:.1f}")
+    print(f"Dispatch complete.  {len(jobs)} jobs scheduled.")
 
     # --- Compute slot assignments per process ---
     proc_task_list: dict = {p["proceso"]: [] for p in proc_list}
     for ji, (job, tasks) in enumerate(zip(jobs, job_tasks)):
         for ti, task in enumerate(tasks):
-            pname     = task["proceso"]
-            start_day = solver.value(starts[(ji, ti)])
-            end_day   = solver.value(ends[(ji, ti)])
+            pname              = task["proceso"]
+            start_day, end_day = scheduled[(ji, ti)]
             proc_task_list[pname].append((job["id"], start_day, end_day))
 
     slot_assignments: dict = {}
@@ -545,8 +578,8 @@ def main():
             first_ti = 0
             last_ti  = len(tasks) - 1
 
-            job_start_day  = solver.value(starts[(ji, first_ti)])
-            job_end_day    = solver.value(ends[(ji, last_ti)])
+            job_start_day  = scheduled[(ji, first_ti)][0]
+            job_end_day    = scheduled[(ji, last_ti)][1]
             job_start_date = workday_to_date(job_start_day,   calendar)
             job_end_date   = workday_to_date(job_end_day - 1, calendar)
 
@@ -563,8 +596,7 @@ def main():
             ))
 
             for ti, task in enumerate(tasks):
-                task_start_day  = solver.value(starts[(ji, ti)])
-                task_end_day    = solver.value(ends[(ji, ti)])
+                task_start_day, task_end_day = scheduled[(ji, ti)]
                 task_start_date = workday_to_date(task_start_day,   calendar)
                 task_end_date   = workday_to_date(task_end_day - 1, calendar)
                 slot            = slot_assignments.get((job["id"], task["proceso"]), 1)
