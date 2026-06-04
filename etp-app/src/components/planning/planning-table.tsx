@@ -223,6 +223,7 @@ export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: Plan
   const [localRecords, setLocalRecords] = useState(records);
   const [search, setSearch] = useState("");
   const [arrivalFilter, setArrivalFilter] = useState<"all" | "with" | "without">("all");
+  const [estadoFilter, setEstadoFilter] = useState<"all" | "al-dia" | "atrasado">("all");
   const [editingRecord, setEditingRecord] = useState<SalesPlanning | null>(null);
   const [bufferRecord, setBufferRecord] = useState<SalesPlanning | null>(null);
   const [confirmDeleteRecord, setConfirmDeleteRecord] = useState<SalesPlanning | null>(null);
@@ -261,7 +262,12 @@ export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: Plan
       arrivalFilter === "all" ||
       (arrivalFilter === "with" && r.llegada != null) ||
       (arrivalFilter === "without" && r.llegada == null);
-    return matchesText && matchesArrival;
+    const isAtrasadoRecord = (r.planning_buffer_days ?? 0) < 0;
+    const matchesEstado =
+      estadoFilter === "all" ||
+      (estadoFilter === "atrasado" && isAtrasadoRecord) ||
+      (estadoFilter === "al-dia" && !isAtrasadoRecord);
+    return matchesText && matchesArrival && matchesEstado;
   });
 
   const sorted = sortCol
@@ -457,6 +463,15 @@ export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: Plan
           <option value="all">Todos</option>
           <option value="with">Con llegada</option>
           <option value="without">Sin llegada</option>
+        </select>
+        <select
+          value={estadoFilter}
+          onChange={(e) => { setEstadoFilter(e.target.value as "all" | "al-dia" | "atrasado"); setPage(1); }}
+          className="h-8 px-2.5 rounded-md border border-zinc-700 bg-zinc-800/50 text-sm text-zinc-300 focus:outline-none focus:border-amber-500 cursor-pointer"
+        >
+          <option value="all">Estado</option>
+          <option value="al-dia">Al día</option>
+          <option value="atrasado">Atrasado</option>
         </select>
         <span className="text-xs text-zinc-500">{filtered.length} registro{filtered.length !== 1 ? "s" : ""} en total</span>
       </div>
