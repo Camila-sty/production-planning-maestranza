@@ -363,7 +363,7 @@ function buildGanttSheet(
   // Add run date as second row if available
   if (runCreatedAt) {
     const metaRow = ws.addRow([
-      `Generado: ${new Date(runCreatedAt).toLocaleString("es-CL")}`,
+      `Generado: ${new Date(runCreatedAt).toLocaleString("es-CL", { timeZone: "America/Santiago" })}`,
       ...Array(INFO_COUNT - 1 + days.length).fill(""),
     ]);
     metaRow.height = 14;

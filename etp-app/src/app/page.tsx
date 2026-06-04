@@ -114,7 +114,7 @@ export default async function HomePage() {
             {activeRun && (
               <div className="text-xs text-zinc-600">
                 Planificación activa v{activeRun.version} — generada el{" "}
-                {new Date(activeRun.created_at).toLocaleString("es-CL")}
+                {new Date(activeRun.created_at).toLocaleString("es-CL", { timeZone: "America/Santiago" })}
                 {hasPrevious && (
                   <span className="ml-2 text-zinc-700">| Anterior disponible para restaurar</span>
                 )}
