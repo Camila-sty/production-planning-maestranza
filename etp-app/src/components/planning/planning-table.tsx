@@ -471,7 +471,7 @@ export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: Plan
           onChange={(e) => { setArrivalFilter(e.target.value as "all" | "with" | "without"); setPage(1); }}
           className="h-8 px-2.5 rounded-md border border-zinc-700 bg-zinc-800/50 text-sm text-zinc-300 focus:outline-none focus:border-amber-500 cursor-pointer"
         >
-          <option value="all">Todos</option>
+          <option value="all">Llegada</option>
           <option value="with">Con llegada</option>
           <option value="without">Sin llegada</option>
         </select>
