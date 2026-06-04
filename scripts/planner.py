@@ -141,8 +141,8 @@ def run_dispatch(
     proc_list: list,
     calendar: list,
     date_index: dict,
-    buffer_at_map: dict,
-    prev_schedule_map: dict,
+    pre_scheduled: "dict | None" = None,
+    delayed_min_start: "dict | None" = None,
 ) -> dict:
     """
     Forward-pass finite-capacity dispatch heuristic.
@@ -157,10 +157,16 @@ def run_dispatch(
          Priority only competes among jobs eligible on the same day —
          higher-priority jobs that are not yet ready cannot block slots.
 
-    When planning_buffer_days < 0 for a job, the job's effective earliest
-    start day is delayed by abs(buffer_days) working days past the buffer_at
-    date.  This is applied as a scheduling constraint (no freeze/replay).
-    The caller applies a matching floor to end_date after dispatch.
+    Parameters
+    ----------
+    pre_scheduled : dict (ji, ti) -> (start_day, end_day), optional
+        Tasks already fixed before the forward pass begins (e.g. processes
+        that a buffered job completed before its buf_at date).  These slots
+        count against capacity exactly like normally scheduled tasks.
+    delayed_min_start : dict ji -> workday_index, optional
+        For the first non-pre-scheduled task of job ji, it cannot start
+        before workday_index.  Applies only to that first task; subsequent
+        tasks are constrained only by the predecessor-done rule.
 
     Returns
     -------
@@ -172,19 +178,17 @@ def run_dispatch(
         date_to_workday(j["llegada"], calendar, date_index) for j in jobs
     ]
 
-    scheduled: dict = {}  # (ji, ti) -> (start_day, end_day)
+    # Seed scheduled with any frozen (pre-scheduled) tasks
+    scheduled: dict = dict(pre_scheduled) if pre_scheduled else {}
 
-    # ── Compute effective minimum start day for negatively-buffered jobs ──
-    effective_min_start: dict = {}
-    for ji, (job, tasks) in enumerate(zip(jobs, job_tasks)):
-        buf    = job.get("buffer", 0)
-        buf_at = buffer_at_map.get(job["id"])
-        if buf < 0 and buf_at is not None and tasks:
-            buf_at_day = date_to_workday(buf_at, calendar, date_index)
-            delay_day  = buf_at_day + abs(buf)
-            eff        = max(llegada_days[ji], delay_day)
-            if eff > llegada_days[ji]:
-                effective_min_start[ji] = eff
+    # For each delayed job, find the first task index that is NOT pre-scheduled
+    first_delayed_ti: dict = {}
+    if delayed_min_start:
+        for ji in delayed_min_start:
+            fft = 0
+            while fft < len(job_tasks[ji]) and (ji, fft) in scheduled:
+                fft += 1
+            first_delayed_ti[ji] = fft
 
     # ── Validation targets ────────────────────────────────────────────────
     WATCH_OTS  = {"2372", "2411", "2412"}
@@ -215,9 +219,13 @@ def run_dispatch(
                     continue                        # all tasks done
                 if jtasks[ti]["proceso"] != pname:
                     continue                        # next task is a different process
-                min_start = effective_min_start.get(ji2, llegada_days[ji2])
-                if min_start > d:
-                    continue                        # not arrived / buffer delay
+                if llegada_days[ji2] > d:
+                    continue                        # equipment not arrived yet
+                # Buffer delay: the first non-frozen task has a min start day
+                if (delayed_min_start and ji2 in delayed_min_start
+                        and ti == first_delayed_ti.get(ji2, 0)
+                        and d < delayed_min_start[ji2]):
+                    continue                        # buffer delay window not open
                 if ti > 0:
                     ps2 = scheduled.get((ji2, ti - 1))
                     if ps2 is None or ps2[1] > d:
@@ -245,9 +253,12 @@ def run_dispatch(
                         wreason = "already finished"
                     elif job_tasks[wji][wti]["proceso"] != pname:
                         wreason = f"next process={job_tasks[wji][wti]['proceso']}"
-                    elif effective_min_start.get(wji, llegada_days[wji]) > d:
-                        ms = effective_min_start.get(wji, llegada_days[wji])
-                        wreason = f"not ready (min start day {ms} > {d})"
+                    elif llegada_days[wji] > d:
+                        wreason = f"not arrived (llegada day {llegada_days[wji]} > {d})"
+                    elif (delayed_min_start and wji in delayed_min_start
+                          and wti == first_delayed_ti.get(wji, 0)
+                          and d < delayed_min_start[wji]):
+                        wreason = f"buffer delay (min day {delayed_min_start[wji]} > {d})"
                     elif wti > 0:
                         ps3 = scheduled.get((wji, wti - 1))
                         if ps3 is None or ps3[1] > d:
@@ -370,22 +381,14 @@ def main():
         print(f"  Special working days loaded: {sorted(special_days)}")
 
     # --- Load buffer adjustments ---
-    buffer_cutoff = active_run["created_at"] if active_run else None
-
-    if buffer_cutoff:
-        cur.execute("""
-            SELECT id, planning_buffer_days, planning_buffer_at
-            FROM sales_planning
-            WHERE planning_buffer_days IS NOT NULL
-              AND planning_buffer_at IS NOT NULL
-              AND planning_buffer_at > %s
-        """, (buffer_cutoff,))
-    else:
-        cur.execute("""
-            SELECT id, planning_buffer_days, planning_buffer_at
-            FROM sales_planning
-            WHERE planning_buffer_days IS NOT NULL
-        """)
+    # Buffers persist until explicitly cleared (planning_buffer_days set to NULL).
+    # No timestamp filter: a buffer set before the last run still applies on re-plan.
+    cur.execute("""
+        SELECT id, planning_buffer_days, planning_buffer_at
+        FROM sales_planning
+        WHERE planning_buffer_days IS NOT NULL
+          AND planning_buffer_at IS NOT NULL
+    """)
     buffer_rows = cur.fetchall()
 
     buffer_map: dict     = {}
@@ -399,31 +402,6 @@ def main():
 
     if buffer_map:
         print(f"  Buffer adjustments loaded: {len(buffer_map)} records")
-
-    # --- Load previous run's process schedule for buffered jobs ---
-    prev_schedule_map: dict = {}
-    if active_run and buffer_map:
-        cur.execute("""
-            SELECT sales_planning_id, proceso, orden, start_date, end_date, duration_days
-            FROM optimized_process_schedule
-            WHERE planning_run_id = %s
-            ORDER BY sales_planning_id, orden
-        """, (active_run["id"],))
-        prev_sched_rows = cur.fetchall()
-        for row in prev_sched_rows:
-            jid = row["sales_planning_id"]
-            if jid not in buffer_map:
-                continue
-            if jid not in prev_schedule_map:
-                prev_schedule_map[jid] = {}
-            s = to_date(row["start_date"])
-            e = to_date(row["end_date"])
-            if s and e:
-                prev_schedule_map[jid][row["proceso"]] = {
-                    "start_date": s,
-                    "end_date":   e,
-                    "duration":   row["duration_days"],
-                }
 
     # --- Load jobs ---
     cur.execute("""
@@ -499,31 +477,64 @@ def main():
     print(f"Jobs: {len(jobs)}  |  Processes: {len(proc_list)}  |  Calendar size: {CAL_SIZE} working days")
     print(f"Reference date: {ref_date}")
 
-    # --- Dispatch ---
+    # --- Base dispatch (no buffer constraints) ---
+    # Used to determine which tasks a buffered job has completed by its buf_at date.
+    print("Running base dispatch for buffer analysis...")
+    base_scheduled = run_dispatch(jobs, job_tasks, proc_list, calendar, date_index)
+
+    # --- Compute buffer constraints from base dispatch ---
+    # For each job with buf < 0:
+    #   • Tasks whose base end_day <= buf_at_day  → freeze (pre_scheduled)
+    #   • First task NOT yet done at buf_at        → delayed by abs(buf) workdays
+    pre_scheduled:     dict = {}
+    delayed_min_start: dict = {}
+    end_date_floor:    dict = {}
+
+    for ji, (job, tasks) in enumerate(zip(jobs, job_tasks)):
+        buf    = job["buffer"]
+        buf_at = buffer_at_map.get(job["id"])
+        if buf >= 0 or buf_at is None or not tasks:
+            continue
+
+        buf_at_day    = date_to_workday(buf_at, calendar, date_index)
+        delay_end_day = buf_at_day + abs(buf)
+
+        first_pending_ti = None
+        for ti, _ in enumerate(tasks):
+            base = base_scheduled.get((ji, ti))
+            if base is None:
+                # Task not scheduled in base (shouldn't happen for valid jobs)
+                if first_pending_ti is None:
+                    first_pending_ti = ti
+                break
+            if base[1] <= buf_at_day + 1:
+                # Task ends on or before buf_at — freeze it at its base date
+                pre_scheduled[(ji, ti)] = base
+            else:
+                # Task is in-progress or future at buf_at — first pending
+                if first_pending_ti is None:
+                    first_pending_ti = ti
+                break
+
+        if first_pending_ti is not None:
+            delayed_min_start[ji] = delay_end_day
+            print(f"  Buffer OT {job['ot']}: frozen {first_pending_ti} task(s), "
+                  f"first pending ti={first_pending_ti} "
+                  f"({tasks[first_pending_ti]['proceso']}), "
+                  f"min_start=day {delay_end_day} ({add_workdays(buf_at, abs(buf), calendar, date_index)})")
+        else:
+            # All tasks done before buf_at — floor end_date
+            end_date_floor[ji] = add_workdays(buf_at, abs(buf), calendar, date_index)
+            print(f"  Buffer OT {job['ot']}: all tasks done before buf_at, "
+                  f"end_date floored at {end_date_floor[ji]}")
+
+    # --- Actual dispatch (with buffer constraints) ---
     print("Dispatching (finite-capacity daily heuristic)...")
     scheduled = run_dispatch(
         jobs, job_tasks, proc_list, calendar, date_index,
-        buffer_at_map, prev_schedule_map,
+        pre_scheduled=pre_scheduled,
+        delayed_min_start=delayed_min_start,
     )
-
-    # Compute end_date floors for jobs with negative buffer
-    end_date_floor: dict = {}
-    for ji, (job, tasks) in enumerate(zip(jobs, job_tasks)):
-        if not tasks:
-            continue
-        buf = job["buffer"]
-        if buf >= 0:
-            continue
-        prev_sched = prev_schedule_map.get(job["id"])
-        if not prev_sched:
-            continue
-        prev_end = max(
-            (ps["end_date"] for ps in prev_sched.values() if ps.get("end_date")),
-            default=None,
-        )
-        if prev_end is None:
-            continue
-        end_date_floor[ji] = add_workdays(prev_end, abs(buf), calendar, date_index)
 
     incomplete = [
         ji for ji, tasks in enumerate(job_tasks)
