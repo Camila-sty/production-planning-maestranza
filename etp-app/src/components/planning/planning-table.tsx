@@ -86,10 +86,21 @@ interface PlanningTableProps {
 }
 
 function fmtShort(iso: string): string {
-  // Use slice(0,10) to read the calendar date directly from the ISO string,
-  // avoiding timezone shifts (dates from the planner are UTC midnight).
-  const datePart = iso.slice(0, 10); // "YYYY-MM-DD"
-  const [y, m, day] = datePart.split("-").map(Number);
+  // Full timestamps (runDate from planning_run.created_at) must be converted
+  // to America/Santiago before extracting the date — otherwise UTC midnight
+  // rolls over to the wrong day for Chilean users.
+  // Pure calendar dates (endDate, estimatedEnd) are stored as UTC midnight
+  // and read directly from the ISO chars to avoid any TZ shift.
+  if (iso.length > 10) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      year: "numeric", month: "2-digit", day: "2-digit",
+      timeZone: "America/Santiago",
+    }).format(new Date(iso)); // → "YYYY-MM-DD"
+    const [y, m, day] = parts.split("-").map(Number);
+    if (!y || !m || !day) return "—";
+    return `${String(day).padStart(2, "0")}-${String(m).padStart(2, "0")}-${y}`;
+  }
+  const [y, m, day] = iso.slice(0, 10).split("-").map(Number);
   if (!y || !m || !day) return "—";
   return `${String(day).padStart(2, "0")}-${String(m).padStart(2, "0")}-${y}`;
 }
