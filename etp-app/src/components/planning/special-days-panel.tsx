@@ -9,6 +9,18 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import type { SpecialWorkingDay } from "@/types";
 import { CalendarPlus, Trash2 } from "lucide-react";
+import { fmtDate } from "@/lib/utils";
+
+/** Format a full timestamp as DD-MM-YYYY in America/Santiago. */
+function fmtChileDate(d: Date | string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    timeZone: "America/Santiago",
+  }).format(new Date(d as string)); // "YYYY-MM-DD"
+  const [y, m, day] = parts.split("-").map(Number);
+  if (!y || !m || !day) return "—";
+  return `${String(day).padStart(2, "0")}-${String(m).padStart(2, "0")}-${y}`;
+}
 
 interface Props {
   specialDays: SpecialWorkingDay[];
@@ -72,7 +84,11 @@ export function SpecialDaysPanel({ specialDays, activePlanRunCreatedAt, isAdmin 
     }
   }
 
-  const today = new Date().toISOString().split("T")[0];
+  // Use Chile's current date for the min constraint — toISOString() gives UTC
+  // which can be "tomorrow" in Chile when it's past midnight UTC.
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Santiago",
+  }).format(new Date());
 
   return (
     <div className="space-y-4">
@@ -135,7 +151,7 @@ export function SpecialDaysPanel({ specialDays, activePlanRunCreatedAt, isAdmin 
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-zinc-800 bg-zinc-900/80">
-                {["Fecha", "Tipo", "Descripción", "Estado", ""].map((h) => (
+                {["Fecha de registro", "Fecha extra", "Tipo", "Descripción", "Estado", ""].map((h) => (
                   <th
                     key={h}
                     className="text-left px-3 py-2 text-xs text-zinc-500 uppercase tracking-wider font-medium"
@@ -147,16 +163,12 @@ export function SpecialDaysPanel({ specialDays, activePlanRunCreatedAt, isAdmin 
             </thead>
             <tbody>
               {specialDays.map((d) => {
-                const dateStr = new Date(d.date).toLocaleDateString("es-CL");
-                const usedInActive =
-                  d.used_in_planning &&
-                  d.planning_run_id != null;
-                const blocked =
-                  activePlanRunCreatedAt != null &&
-                  usedInActive;
+                const usedInActive = d.used_in_planning && d.planning_run_id != null;
+                const blocked = activePlanRunCreatedAt != null && usedInActive;
                 return (
                   <tr key={d.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
-                    <td className="px-3 py-2 font-mono text-xs text-zinc-300">{dateStr}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-zinc-500">{fmtChileDate(d.created_at)}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-zinc-300">{fmtDate(d.date)}</td>
                     <td className="px-3 py-2 text-xs text-zinc-400">{TYPE_LABELS[d.type] ?? d.type}</td>
                     <td className="px-3 py-2 text-xs text-zinc-500">{d.description ?? "—"}</td>
                     <td className="px-3 py-2">
