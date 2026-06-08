@@ -39,8 +39,12 @@ function slotLabel(proceso: string, slot: number): string {
   return `${shortLabel(proceso)}${slot}`;
 }
 
-/** Returns array of working days (Mon–Fri) between start and end inclusive. */
-function workingDays(start: Date, end: Date): Date[] {
+/**
+ * Returns array of working days between start and end inclusive.
+ * Includes Mon–Fri plus any date present in specialDays (YYYY-MM-DD keys).
+ * Mirrors the logic of build_working_calendar() in planner.py.
+ */
+function workingDays(start: Date, end: Date, specialDays?: Set<string>): Date[] {
   const days: Date[] = [];
   const cur = new Date(start);
   cur.setHours(0, 0, 0, 0);
@@ -48,7 +52,8 @@ function workingDays(start: Date, end: Date): Date[] {
   last.setHours(0, 0, 0, 0);
   while (cur <= last) {
     const dow = cur.getDay();
-    if (dow !== 0 && dow !== 6) days.push(new Date(cur));
+    const key = cur.toISOString().split("T")[0];
+    if (dow !== 0 && dow !== 6 || specialDays?.has(key)) days.push(new Date(cur));
     cur.setDate(cur.getDate() + 1);
   }
   return days;
@@ -164,6 +169,22 @@ export async function GET() {
       ])
     : [[], []];
 
+  // Load special working days used in each run (mirrors planner.py calendar)
+  const toDateKey = (d: Date | string) =>
+    new Date(new Date(d).toISOString().split("T")[0] + "T00:00:00").toISOString().split("T")[0];
+
+  const [activeSpecialDays, prevSpecialDays] = await Promise.all([
+    activeRun
+      ? prisma.specialWorkingDay.findMany({ where: { planning_run_id: activeRun.id } })
+      : Promise.resolve([]),
+    previousRun
+      ? prisma.specialWorkingDay.findMany({ where: { planning_run_id: previousRun.id } })
+      : Promise.resolve([]),
+  ]);
+
+  const activeSpecialSet = new Set(activeSpecialDays.map((d) => toDateKey(d.date)));
+  const prevSpecialSet   = new Set(prevSpecialDays.map((d) => toDateKey(d.date)));
+
   const wb = new ExcelJS.Workbook();
   wb.creator = "ETP Sistema de Planificación";
   wb.created = new Date();
@@ -248,13 +269,13 @@ export async function GET() {
   // =========================================================================
   // Sheet 3 — Planificación Optima (Gantt with slots)
   // =========================================================================
-  buildGanttSheet(wb, "Planificación Optima", sortByPriority(optimized), schedules, activeRun?.created_at);
+  buildGanttSheet(wb, "Planificación Optima", sortByPriority(optimized), schedules, activeRun?.created_at, activeSpecialSet);
 
   // =========================================================================
   // Sheet 4 — Planificación Optima Anterior (if exists)
   // =========================================================================
   if (previousRun && prevOptimized.length > 0) {
-    buildGanttSheet(wb, "Planificación Optima Anterior", sortByPriority(prevOptimized), prevSchedules, previousRun.created_at);
+    buildGanttSheet(wb, "Planificación Optima Anterior", sortByPriority(prevOptimized), prevSchedules, previousRun.created_at, prevSpecialSet);
   } else if (previousRun) {
     const wsPrev = wb.addWorksheet("Planificación Optima Anterior");
     wsPrev.addRow(["Sin datos de planificación anterior disponibles."]);
@@ -309,7 +330,8 @@ function buildGanttSheet(
   sheetName: string,
   optimized: OptRow[],
   schedules: SchedRow[],
-  runCreatedAt?: Date
+  runCreatedAt?: Date,
+  specialDays?: Set<string>,
 ) {
   const ws = wb.addWorksheet(sheetName);
 
@@ -324,7 +346,7 @@ function buildGanttSheet(
   const rangeStart = new Date(Math.min(...allStarts.map((d) => d.getTime())));
   const rangeEnd   = new Date(Math.max(...allEnds.map((d) => d.getTime())));
 
-  const days = workingDays(rangeStart, rangeEnd);
+  const days = workingDays(rangeStart, rangeEnd, specialDays);
 
   const INFO_COLS = ["Cód. Plazo", "OT", "Clte. Interno", "Cliente", "Equipo", "Modelo", "Prioridad"];
   const INFO_COUNT = INFO_COLS.length;
@@ -386,8 +408,8 @@ function buildGanttSheet(
     const cur = new Date(start);
     while (cur <= end) {
       const dow = cur.getDay();
-      if (dow !== 0 && dow !== 6) {
-        const key = cur.toISOString().split("T")[0];
+      const key = cur.toISOString().split("T")[0];
+      if (dow !== 0 && dow !== 6 || specialDays?.has(key)) {
         if (!jobDayMap[sid][key]) jobDayMap[sid][key] = label;
       }
       cur.setDate(cur.getDate() + 1);
