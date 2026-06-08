@@ -1,31 +1,36 @@
 # Production Planning Maestranza
 
+Web platform for production planning and scheduling in a heavy equipment manufacturing workshop (maestranza).
+
 ## Overview
 
-A full-stack production planning system for a heavy equipment manufacturing workshop (maestranza). The platform centralizes order intake, scheduling, and capacity allocation across a multi-process production flow, replacing informal coordination with a structured, data-driven planning cycle.
-
-The system solves the core challenge of scheduling multiple simultaneous work orders across constrained production resources — assigning each equipment unit to each process step on specific working days, respecting per-process daily capacity limits, arrival dates, and priority rankings. It tracks deviations from plan (delays, special working days) and recomputes the schedule on demand.
-
-Scope includes order management, finite-capacity scheduling, planning versioning, Excel report generation, and role-based user access.
+- Web-based platform for managing and scheduling equipment production orders
+- Multi-process capacity management with configurable daily resource limits
+- Priority-based scheduling with delay and buffer handling
+- Historical planning tracking with version control and rollback support
+- Excel reporting with summary tables, process breakdowns, and Gantt charts
 
 ---
 
 ## Architecture
 
 ```
-Browser (Next.js)
-       │
-       ▼
-API Layer (Next.js Route Handlers)
-       │
-       ├──► PostgreSQL (Supabase)
-       │
-       └──► Planning Engine (Python / OR-Tools)
-                  │
-                  └──► PostgreSQL (write results)
+Frontend (Next.js)
+        │
+        ▼
+   API Layer (Next.js Route Handlers)
+        │
+        ▼
+PostgreSQL Database (Supabase)
+        │
+        ▼
+Planning Engine (Python + OR-Tools)
+        │
+        ▼
+   Excel Reporting
 ```
 
-The web application handles all CRUD operations and user interactions. When a planning run is triggered, the API invokes a Python script (hosted on Railway) that reads scheduling inputs from the database, runs the dispatch algorithm, and writes results back. The frontend then reads the updated results for display and export.
+The web application manages all user interactions and data operations. Planning runs are triggered via the API, which invokes a Python-based scheduling engine hosted on Railway. The engine reads inputs from the database, computes the schedule, and writes results back. Reports are generated on demand from the computed results.
 
 ---
 
@@ -33,47 +38,40 @@ The web application handles all CRUD operations and user interactions. When a pl
 
 - Equipment registration and management
 - Finite-capacity production planning
-- Priority-based scheduling
-- Delay management via configurable buffers
+- Priority management
+- Delay and buffer management
 - Working calendar customization
 - Special working days support
-- Planning versioning with rollback to previous run
-- Historical planning tracking per equipment
-- Excel export (summary, process detail, Gantt charts)
-- User management and role-based access control
+- Historical planning tracking
+- Planning version control with rollback
+- Excel export (summary, process detail, Gantt)
+- User management
+- Authentication and role-based access control
 
 ---
 
 ## Planning Engine
 
-The scheduling engine (`scripts/planner.py`) implements a forward-pass, finite-capacity dispatch heuristic:
-
-- **Process sequencing** — each equipment unit advances through a fixed multi-step process chain; a step cannot begin until the previous completes
-- **Daily capacity constraints** — each process has a configurable maximum number of simultaneous units per working day
-- **Priority-based dispatching** — when available slots are fewer than eligible jobs, priority rank determines assignment order
-- **Buffer support** — a two-pass approach freezes already-completed tasks for delayed jobs and applies the configured delay only to the first pending step, preserving progress
-- **Working calendar** — scheduling operates on working days only; special days (weekends, holidays marked as working) are injected into the calendar before dispatch
-
-The engine reads directly from and writes directly to the production database.
+- Finite-capacity scheduling across a fixed multi-step process chain
+- Strict process sequencing — each step begins only after the previous completes
+- Resource allocation respecting configurable per-process daily capacity limits
+- Priority-based dispatching — lower priority number = higher scheduling precedence
+- Working calendar constraints with special day injection
+- Replanning support — buffers applied only to the first pending step, preserving completed work
 
 ---
 
 ## Project Structure
 
 ```
-/
-├── etp-app/          # Next.js web application (frontend + API layer)
-│   ├── src/app/      # Pages, route handlers (App Router)
-│   ├── src/components/
-│   ├── src/lib/
-│   └── prisma/       # Database schema and migrations
-│
-├── scripts/          # Planning engine and utility scripts
-│   ├── planner.py    # Core scheduling engine (Python / OR-Tools)
-│   ├── seed_rules.py # Process rules loader from Excel
-│   └── ...
-│
-└── data/             # Reference files: process definitions, time rules, product master
+/data
+    Planning rules and reference files (process definitions, time tables, product master)
+
+/etp-app
+    Web application: Next.js frontend, API route handlers, Prisma schema, DB migrations
+
+/scripts
+    Planning engine (planner.py), rule loaders, and utility scripts
 ```
 
 ---
@@ -81,26 +79,46 @@ The engine reads directly from and writes directly to the production database.
 ## Technology Stack
 
 ### Frontend
-- Next.js 15 (App Router)
-- React, TypeScript
-- Tailwind CSS, shadcn/ui
+- Next.js (App Router)
+- React
+- TypeScript
+- Tailwind CSS
 
 ### Backend
-- Next.js Route Handlers (API)
+- Node.js
 - Prisma ORM
 
 ### Database
-- PostgreSQL (Supabase)
-- Supabase Auth
+- PostgreSQL
+- Supabase
 
 ### Planning Engine
-- Python 3
-- Google OR-Tools (dispatch heuristic)
+- Python
+- Google OR-Tools (CP-SAT)
 
 ### Infrastructure
-- Vercel (web application)
-- Railway (planning engine runner)
-- Supabase (managed PostgreSQL + authentication)
+- Vercel
+- Railway
+- Supabase
+- GitHub
+
+---
+
+## Security
+
+- User authentication via Supabase Auth (email/password, PKCE flow)
+- Role-based access control (admin / standard user)
+- Server-side session validation on all API routes
+- Protected planning operations restricted to admin role
+
+---
+
+## Scalability
+
+- Cloud-native architecture with independently deployable components
+- Decoupled planning engine — stateless, invoked on demand, replaceable without web layer changes
+- Independent database layer managed and scaled by Supabase
+- Extensible scheduling framework — process rules and capacities are data-driven
 
 ---
 
@@ -108,29 +126,9 @@ The engine reads directly from and writes directly to the production database.
 
 | Component | Platform |
 |---|---|
-| Web application | Vercel (auto-deploy from `main`) |
-| Planning engine | Railway (invoked via API on demand) |
-| Database + Auth | Supabase (managed PostgreSQL) |
-
-The planning engine is not continuously running — it is invoked synchronously per planning request and exits after writing results.
-
----
-
-## Security
-
-- Authentication is managed by Supabase Auth (email/password, PKCE flow)
-- Server-side session validation on every API route
-- Role-based access: admin users can modify planning data, execute the planner, and manage users; standard users have read access
-- `created_by` / `updated_by` fields are set server-side from the authenticated session, never from client input
-
----
-
-## Scalability
-
-- Cloud-native architecture: all components are independently deployable and scalable
-- Decoupled planning engine: the scheduler runs as a stateless process and can be migrated, scaled, or replaced without changes to the web layer
-- Independent database layer: Supabase provides managed scaling for storage and connections
-- Extensible scheduling framework: process definitions, capacities, and calendar rules are data-driven and configurable without code changes
+| Frontend + API | Vercel (auto-deploy from `main`) |
+| Planning engine | Railway |
+| Database + Auth | Supabase |
 
 ---
 
