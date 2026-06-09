@@ -39,10 +39,7 @@ export default async function HomePage() {
         }),
     prisma.specialWorkingDay.findMany({ orderBy: { date: "asc" } }),
     prisma.salesPlanningOptimized.findMany({
-      where: {
-        start_date: { not: null },
-        planning_run: { status: { in: ["PREVIOUS", "ARCHIVED"] } },
-      },
+      where: { start_date: { not: null } },
       orderBy: { created_at: "asc" },
       include: { planning_run: { select: { id: true, version: true, status: true, created_at: true } } },
     }),
