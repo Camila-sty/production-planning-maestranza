@@ -594,9 +594,10 @@ def main():
     #       buffer -3 → -1 : first_buf_at stays, abs shrinks → min_start -2 days ✓
     #       re-plan same buf: same first_buf_at + same abs → same min_start ✓
     #
-    pre_scheduled:     dict = {}
-    delayed_min_start: dict = {}
-    end_date_floor:    dict = {}
+    pre_scheduled:        dict = {}
+    delayed_min_start:    dict = {}
+    end_date_floor:       dict = {}
+    straddling_completed: dict = {}  # (ji,ti) -> (comp_start_day, comp_end_day_excl)
 
     for ji, (job, tasks) in enumerate(zip(jobs, job_tasks)):
         buf_days     = job["buffer"]    # total accumulated (e.g. -3)
@@ -622,7 +623,16 @@ def main():
                     # Entire process completes before buffer anchor → freeze it.
                     pre_scheduled[(ji, ti)] = (prev_start_day, prev_end_day_excl)
                     continue  # keep evaluating subsequent tasks
-            # Process overlaps first_buf_at (or has no prev data) → first pending.
+                if prev_start_day < first_buf_at_day:
+                    # Process started before buffer_at but extends into it (straddles).
+                    # Freeze only the completed days; schedule only the remaining days.
+                    completed = first_buf_at_day - prev_start_day  # days already done
+                    remaining = task["duration"] - completed
+                    if remaining > 0:
+                        straddling_completed[(ji, ti)] = (prev_start_day,
+                                                          prev_start_day + completed)
+                        task["duration"] = remaining  # dispatch only remaining days
+            # Process starts on/after buffer_at, straddles, or has no prev data → pending.
             first_pending_ti = ti
             break
 
@@ -697,6 +707,10 @@ def main():
             last_ti  = len(tasks) - 1
 
             job_start_day  = scheduled[(ji, first_ti)][0]
+            # If the very first task straddles buffer_at, its historical start
+            # (the completed portion) is earlier than the dispatched start.
+            if (ji, first_ti) in straddling_completed:
+                job_start_day = min(job_start_day, straddling_completed[(ji, first_ti)][0])
             job_end_day    = scheduled[(ji, last_ti)][1]
             job_start_date = workday_to_date(job_start_day,   calendar)
             job_end_date   = workday_to_date(job_end_day - 1, calendar)
@@ -720,6 +734,24 @@ def main():
                 task_start_date = workday_to_date(task_start_day,   calendar)
                 task_end_date   = workday_to_date(task_end_day - 1, calendar)
                 slot            = slot_assignments.get((job["id"], task["proceso"]), 1)
+
+                # If this task straddles buffer_at, write the completed portion first
+                # (the days already worked before buffer_at) as a separate DB row.
+                if (ji, ti) in straddling_completed:
+                    cs_day, ce_day = straddling_completed[(ji, ti)]
+                    comp_id = f"ops_{new_run_id[-8:]}_{job['id'][:10]}_{ji}_{ti}_c"
+                    cur.execute("""
+                        INSERT INTO optimized_process_schedule
+                            (id, sales_planning_id, planning_run_id, proceso, orden, slot,
+                             start_date, end_date, duration_days, created_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        comp_id, job["id"], new_run_id,
+                        task["proceso"], task["orden"], slot,
+                        workday_to_date(cs_day, calendar).isoformat(),
+                        workday_to_date(ce_day - 1, calendar).isoformat(),
+                        ce_day - cs_day, now,
+                    ))
 
                 sched_id = f"ops_{new_run_id[-8:]}_{job['id'][:10]}_{ji}_{ti}"
                 cur.execute("""
