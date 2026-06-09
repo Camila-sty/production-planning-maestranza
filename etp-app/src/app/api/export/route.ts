@@ -169,21 +169,17 @@ export async function GET() {
       ])
     : [[], []];
 
-  // Load special working days used in each run (mirrors planner.py calendar)
+  // Load all currently existing special working days.
+  // Both the active and previous Gantt calendars use the same set: all days
+  // that exist in the table right now. Deleted days are automatically excluded.
   const toDateKey = (d: Date | string) =>
     new Date(new Date(d).toISOString().split("T")[0] + "T00:00:00").toISOString().split("T")[0];
 
-  const [activeSpecialDays, prevSpecialDays] = await Promise.all([
-    activeRun
-      ? prisma.specialWorkingDay.findMany({ where: { planning_run_id: activeRun.id } })
-      : Promise.resolve([]),
-    previousRun
-      ? prisma.specialWorkingDay.findMany({ where: { planning_run_id: previousRun.id } })
-      : Promise.resolve([]),
-  ]);
+  const allSpecialDays = await prisma.specialWorkingDay.findMany();
+  const allSpecialSet  = new Set(allSpecialDays.map((d) => toDateKey(d.date)));
 
-  const activeSpecialSet = new Set(activeSpecialDays.map((d) => toDateKey(d.date)));
-  const prevSpecialSet   = new Set(prevSpecialDays.map((d) => toDateKey(d.date)));
+  const activeSpecialSet = allSpecialSet;
+  const prevSpecialSet   = allSpecialSet;
 
   const wb = new ExcelJS.Workbook();
   wb.creator = "ETP Sistema de Planificación";

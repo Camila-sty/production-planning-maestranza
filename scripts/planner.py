@@ -368,7 +368,10 @@ def main():
         lt_lookup[cp][lt["proceso"]] = lt["duracion_dias"]
 
     # --- Load special working days ---
-    cur.execute("SELECT id, date FROM special_working_day WHERE used_in_planning = FALSE")
+    # Load ALL existing days regardless of used_in_planning status.
+    # The status field is informational only — a day should be included in
+    # every planning run as long as it exists in the table.
+    cur.execute("SELECT id, date FROM special_working_day")
     special_rows = cur.fetchall()
 
     special_days: set = set()
@@ -628,8 +631,11 @@ def main():
             print(f"  Job {ji+1}: {job['id'][:8]}… | {job['codigo_plazo']:>4} | "
                   f"{job_start_date} → {job_end_date} | P{job['prioridad']}{tag}")
 
-        # --- Mark special working days as used ---
-        cur.execute("SELECT id FROM special_working_day WHERE used_in_planning = FALSE")
+        # --- Mark ALL special working days as used in this run ---
+        # All existing days were loaded and applied to the calendar above.
+        # Update every row so planning_run_id reflects the latest run that
+        # consumed them, and used_in_planning stays TRUE once set.
+        cur.execute("SELECT id FROM special_working_day")
         special_day_ids = cur.fetchall()
         for row in special_day_ids:
             cur.execute(

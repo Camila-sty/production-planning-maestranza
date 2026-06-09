@@ -6,6 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import type { SpecialWorkingDay } from "@/types";
 import { CalendarPlus, Trash2 } from "lucide-react";
@@ -41,6 +47,7 @@ export function SpecialDaysPanel({ specialDays, activePlanRunCreatedAt, isAdmin 
   const [description, setDescription] = useState("");
   const [adding, setAdding] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDeleteDay, setConfirmDeleteDay] = useState<SpecialWorkingDay | null>(null);
 
   async function handleAdd() {
     if (!date) {
@@ -68,15 +75,16 @@ export function SpecialDaysPanel({ specialDays, activePlanRunCreatedAt, isAdmin 
     }
   }
 
-  async function handleDelete(id: string) {
-    setDeletingId(id);
+  async function handleDelete(day: SpecialWorkingDay) {
+    setDeletingId(day.id);
+    setConfirmDeleteDay(null);
     try {
-      const res = await fetch(`/api/special-days/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/special-days/${day.id}`, { method: "DELETE" });
       const data = await res.json();
       if (!res.ok || data.error) {
         toast.error(data.error ?? "Error al eliminar");
       } else {
-        toast.success("Día eliminado");
+        toast.success("Día especial eliminado");
         router.refresh();
       }
     } finally {
@@ -92,9 +100,41 @@ export function SpecialDaysPanel({ specialDays, activePlanRunCreatedAt, isAdmin 
 
   return (
     <div className="space-y-4">
+      {/* Confirm delete dialog */}
+      <Dialog open={confirmDeleteDay !== null} onOpenChange={(open) => !open && setConfirmDeleteDay(null)}>
+        <DialogContent className="w-[90vw] max-w-[480px] bg-zinc-900 border-zinc-800 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white">Confirmar eliminación</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-zinc-400 pt-1">
+            ¿Eliminar el día especial{" "}
+            <span className="text-amber-400 font-mono font-semibold">
+              {confirmDeleteDay ? fmtDate(confirmDeleteDay.date) : ""}
+            </span>
+            ? La próxima planificación ya no lo considerará como día hábil.
+          </p>
+          <div className="flex gap-2 pt-3 border-t border-zinc-800">
+            <Button
+              className="bg-red-600 hover:bg-red-500 text-white font-semibold px-6"
+              disabled={deletingId === confirmDeleteDay?.id}
+              onClick={() => confirmDeleteDay && handleDelete(confirmDeleteDay)}
+            >
+              {deletingId === confirmDeleteDay?.id ? "Eliminando..." : "Eliminar"}
+            </Button>
+            <Button
+              variant="outline"
+              className="border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-800"
+              onClick={() => setConfirmDeleteDay(null)}
+            >
+              Cancelar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <p className="text-xs text-zinc-500">
-        Agrega feriados o fines de semana que se deben tratar como días hábiles en la próxima planificación.
-        Las fechas ya usadas en la planificación activa aparecen bloqueadas.
+        Agrega feriados o fines de semana que se deben tratar como días hábiles en la planificación.
+        Todos los días registrados se aplican en cada planificación mientras existan.
       </p>
 
       {/* Add form — admin only */}
@@ -163,8 +203,7 @@ export function SpecialDaysPanel({ specialDays, activePlanRunCreatedAt, isAdmin 
             </thead>
             <tbody>
               {specialDays.map((d) => {
-                const usedInActive = d.used_in_planning && d.planning_run_id != null;
-                const blocked = activePlanRunCreatedAt != null && usedInActive;
+                const isUsed = d.used_in_planning;
                 return (
                   <tr key={d.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
                     <td className="px-3 py-2 font-mono text-xs text-zinc-500">{fmtChileDate(d.created_at)}</td>
@@ -172,7 +211,7 @@ export function SpecialDaysPanel({ specialDays, activePlanRunCreatedAt, isAdmin 
                     <td className="px-3 py-2 text-xs text-zinc-400">{TYPE_LABELS[d.type] ?? d.type}</td>
                     <td className="px-3 py-2 text-xs text-zinc-500">{d.description ?? "—"}</td>
                     <td className="px-3 py-2">
-                      {blocked ? (
+                      {isUsed ? (
                         <Badge className="text-xs bg-green-500/20 text-green-400 border-0">
                           Usado en planificación
                         </Badge>
@@ -183,11 +222,11 @@ export function SpecialDaysPanel({ specialDays, activePlanRunCreatedAt, isAdmin 
                       )}
                     </td>
                     <td className="px-3 py-2">
-                      {isAdmin && !blocked && (
+                      {isAdmin && (
                         <Button
                           size="icon"
                           variant="ghost"
-                          onClick={() => handleDelete(d.id)}
+                          onClick={() => setConfirmDeleteDay(d)}
                           disabled={deletingId === d.id}
                           className="w-6 h-6 text-zinc-600 hover:text-red-400 hover:bg-red-950/30"
                         >

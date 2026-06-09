@@ -22,13 +22,6 @@ export async function DELETE(
     return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   }
 
-  if (day.used_in_planning) {
-    return NextResponse.json(
-      { error: "No se puede eliminar un día ya usado en planificación" },
-      { status: 409 }
-    );
-  }
-
   await prisma.specialWorkingDay.delete({ where: { id } });
   return NextResponse.json({ success: true });
 }
