@@ -169,17 +169,24 @@ export async function GET() {
       ])
     : [[], []];
 
-  // Load all currently existing special working days.
-  // Both the active and previous Gantt calendars use the same set: all days
-  // that exist in the table right now. Deleted days are automatically excluded.
+  // Each planning run should use only the special working days that existed
+  // at the moment that run was created.  We compare created_at timestamps so
+  // a day added after a run never appears in that run's Gantt calendar.
   const toDateKey = (d: Date | string) =>
     new Date(new Date(d).toISOString().split("T")[0] + "T00:00:00").toISOString().split("T")[0];
 
   const allSpecialDays = await prisma.specialWorkingDay.findMany();
-  const allSpecialSet  = new Set(allSpecialDays.map((d) => toDateKey(d.date)));
 
-  const activeSpecialSet = allSpecialSet;
-  const prevSpecialSet   = allSpecialSet;
+  const activeSpecialSet = new Set(
+    allSpecialDays
+      .filter((d) => !activeRun || d.created_at <= activeRun.created_at)
+      .map((d) => toDateKey(d.date))
+  );
+  const prevSpecialSet = new Set(
+    allSpecialDays
+      .filter((d) => !previousRun || d.created_at <= previousRun.created_at)
+      .map((d) => toDateKey(d.date))
+  );
 
   const wb = new ExcelJS.Workbook();
   wb.creator = "ETP Sistema de Planificación";
