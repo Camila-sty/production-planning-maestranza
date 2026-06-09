@@ -49,10 +49,11 @@ export default async function HomePage() {
   const hasPrevious = previousRun != null;
 
   // Build endDateMap: salesPlanningId → end_date from ACTIVE run
+  // Store only the calendar date (YYYY-MM-DD) to avoid timezone shifts in fmtShort.
   const endDateMap: Record<string, string> = {};
   for (const o of optimizedRaw) {
     if (o.sales_planning_id && o.end_date) {
-      endDateMap[o.sales_planning_id] = new Date(o.end_date).toISOString();
+      endDateMap[o.sales_planning_id] = new Date(o.end_date).toISOString().slice(0, 10);
     }
   }
 
@@ -65,7 +66,7 @@ export default async function HomePage() {
     historyMap[sid].push({
       version: o.planning_run.version,
       runDate: new Date(o.planning_run.created_at).toISOString(),
-      endDate: new Date(o.end_date).toISOString(),
+      endDate: new Date(o.end_date).toISOString().slice(0, 10),
       status: o.planning_run.status,
     });
   }

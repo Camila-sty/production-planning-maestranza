@@ -60,7 +60,7 @@ const OPT_COL_DEFS = [
   { key: "codigo_plazo", label: "Cód. Plazo" },
   { key: "equipo",       label: "Equipo" },
   { key: "inicio",       label: "Inicio" },
-  { key: "fin",          label: "Fin" },
+  { key: "fin",          label: "Fecha Entrega" },
   { key: "prioridad",    label: "Prioridad" },
 ];
 

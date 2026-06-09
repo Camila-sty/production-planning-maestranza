@@ -125,17 +125,17 @@ function HistoryTooltip({ history }: { history: PlanRunHistoryEntry[] }) {
   const unique = Array.from(seen.values());
 
   if (unique.length === 0) {
-    return <p className="text-zinc-400 italic text-xs">Sin historial de fechas estimadas</p>;
+    return <p className="text-zinc-400 italic text-xs">Sin historial de fechas de entrega</p>;
   }
   return (
     <div className="text-xs">
       <p className="text-zinc-300 font-semibold pb-1.5 mb-1.5 border-b border-zinc-700/80">
-        Historial de entregas estimadas
+        Historial de fechas de entrega
       </p>
       {/* Column headers */}
       <div className="flex justify-between gap-4 mb-1 text-zinc-500 font-medium">
         <span>Modificación</span>
-        <span>Entrega Estimada</span>
+        <span>Fecha Entrega</span>
       </div>
       {unique.map(({ entry: h, isCurrent }, i) => (
         <div
@@ -352,7 +352,7 @@ export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: Plan
     { key: "llegada",          label: "Llegada" },
     { key: "prioridad",        label: "Prioridad" },
     ...(isAdmin ? [{ key: "buffer", label: "Buffer" }] : []),
-    { key: "entrega_estimada", label: "Entrega Estimada" },
+    { key: "entrega_estimada", label: "Fecha Entrega" },
     { key: "estado",           label: "Estado" },
     { key: "creado_por",       label: "Creado por" },
     { key: "acciones",         label: "Acciones" },
