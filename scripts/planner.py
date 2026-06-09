@@ -458,6 +458,7 @@ def main():
     if excluded_count > 0:
         print(f"  Excluded {excluded_count} record(s) without llegada from planning")
 
+
     if not jobs:
         print("No plannable jobs found (need codigo_plazo + llegada + prioridad).")
         conn.close()
@@ -498,22 +499,70 @@ def main():
     print(f"Jobs: {len(jobs)}  |  Processes: {len(proc_list)}  |  Calendar size: {CAL_SIZE} working days")
     print(f"Reference date: {ref_date}")
 
-    # --- Load previous run's process schedules (for buffer freeze — Part A) ---
-    # We need the ACTUAL dates from the last planning run so we can freeze
-    # processes that already happened before the buffer was registered.
-    prev_run_id = active_run["id"] if active_run else None
+    # --- Load baseline process schedules (for buffer freeze/delay) ---
+    #
+    # We need the schedule from the run that was active JUST BEFORE first_buf_at
+    # (the date the buffer was first ever registered for each OT).
+    # Using this as the baseline guarantees:
+    #   - Freeze: processes that started before first_buf_at stay at their
+    #             pre-buffer dates regardless of how many times we re-plan.
+    #   - Delay:  min_start = baseline_pending_start + abs(buf_days) is stable —
+    #             re-planning with the same buffer always yields the same min_start
+    #             because the baseline never changes.
+    #
+    # Query: for each buffered OT, find the most recent schedule per process from
+    # runs created STRICTLY BEFORE first_buf_at (i.e. the pre-buffer baseline).
+    # Falls back to the most recent run overall if nothing pre-dates first_buf_at
+    # (handles new OTs or edge cases where the baseline run was cleaned up).
     prev_process_sched: dict = {}  # job_id -> {proceso: start_date (Python date)}
-    if prev_run_id and buffer_settings:
+    if buffer_settings:
+        buf_job_ids = list(buffer_settings.keys())
+        # Primary: most recent schedule per (OT, proceso) from runs before first_buf_at
         cur.execute("""
-            SELECT sales_planning_id, proceso, start_date
-            FROM optimized_process_schedule
-            WHERE planning_run_id = %s
-        """, (prev_run_id,))
+            SELECT DISTINCT ON (ops.sales_planning_id, ops.proceso)
+                ops.sales_planning_id,
+                ops.proceso,
+                ops.start_date
+            FROM optimized_process_schedule ops
+            JOIN planning_run pr ON ops.planning_run_id = pr.id
+            JOIN (
+                SELECT sp.id AS sp_id,
+                       MIN(pba.created_at) AS first_buf_at
+                FROM sales_planning sp
+                JOIN planning_buffer_adjustment pba
+                       ON pba.sales_planning_id = sp.id
+                WHERE sp.id = ANY(%s)
+                GROUP BY sp.id
+            ) buf ON ops.sales_planning_id = buf.sp_id
+            WHERE pr.created_at < buf.first_buf_at
+              AND ops.planning_run_id != %s
+            ORDER BY ops.sales_planning_id, ops.proceso, pr.created_at DESC
+        """, (buf_job_ids, new_run_id))
         for row in cur.fetchall():
             jid = row["sales_planning_id"]
             if jid not in prev_process_sched:
                 prev_process_sched[jid] = {}
             prev_process_sched[jid][row["proceso"]] = to_date(row["start_date"])
+
+        # Fallback: for OTs with no pre-buffer baseline, use the most recent run overall
+        missing = [jid for jid in buf_job_ids if jid not in prev_process_sched]
+        if missing:
+            cur.execute("""
+                SELECT DISTINCT ON (ops.sales_planning_id, ops.proceso)
+                    ops.sales_planning_id,
+                    ops.proceso,
+                    ops.start_date
+                FROM optimized_process_schedule ops
+                JOIN planning_run pr ON ops.planning_run_id = pr.id
+                WHERE ops.sales_planning_id = ANY(%s)
+                  AND ops.planning_run_id   != %s
+                ORDER BY ops.sales_planning_id, ops.proceso, pr.created_at DESC
+            """, (missing, new_run_id))
+            for row in cur.fetchall():
+                jid = row["sales_planning_id"]
+                if jid not in prev_process_sched:
+                    prev_process_sched[jid] = {}
+                prev_process_sched[jid][row["proceso"]] = to_date(row["start_date"])
 
     # --- Compute buffer constraints ---
     #
@@ -529,13 +578,16 @@ def main():
     #   Part B — Delay pending tramo (first process on/after first_buf_at)
     #     The first pending task cannot start before:
     #
-    #       delay_end_day = workday(first_buf_at) + abs(planning_buffer_days)
+    #     Case A (prev data exists for that process):
+    #       min_start = prev_pending_start_workday + abs(planning_buffer_days)
+    #       Guarantees real displacement even when prev_start coincides with
+    #       workday(first_buf_at). delta semantics:
+    #         buffer -2 → -3 : same prev_pending_start, abs grows → +1 more day ✓
+    #         re-plan same buf: same prev_pending_start + same abs → same min_start ✓
     #
-    #     Non-compounding: first_buf_at never changes (oldest record stays oldest).
-    #     Delta semantics:
-    #       buffer -2 → -3 : min_start shifts from first_buf_at+2 to first_buf_at+3 (+1 day) ✓
-    #       buffer -3 → -1 : min_start shifts from first_buf_at+3 to first_buf_at+1 (-2 days) ✓
-    #       re-plan same buf: same first_buf_at + same abs → same min_start ✓
+    #     Case B (no prev data — new OT or all prior runs were empty):
+    #       min_start = workday(first_buf_at) + abs(planning_buffer_days)
+    #       Fallback anchor when there is no reference point from a prior plan.
     #
     pre_scheduled:     dict = {}
     delayed_min_start: dict = {}
@@ -567,11 +619,40 @@ def main():
                 break
 
         # Part B: constrain the pending tramo.
+        #
+        # Formula depends on whether we have prev-run data for the first pending process:
+        #
+        #   Case A — prev data exists:
+        #     min_start = prev_pending_start_workday + abs(buf_days)
+        #     This guarantees real displacement of exactly abs(buf_days) workdays
+        #     forward from where that process WAS in the previous plan.
+        #     Even if delay_end_day coincides with the natural start, the process
+        #     is still pushed forward. Non-compounding: prev_pending_start is
+        #     the actual date from the last plan, not today.
+        #
+        #   Case B — no prev data (new OT or all prior runs were empty):
+        #     min_start = workday(first_buf_at) + abs(buf_days)
+        #     Fallback: prevents the pending tramo from starting before the
+        #     buffer anchor date + the delay. Processes before first_buf_at
+        #     are not frozen (nothing to freeze), so the whole OT is delayed.
+        #
         if first_pending_ti is not None:
-            delayed_min_start[ji] = delay_end_day
-            floor_date = workday_to_date(delay_end_day, calendar)
+            first_pending_proc = tasks[first_pending_ti]["proceso"]
+            prev_pending_start = prev_job_sched.get(first_pending_proc)
+
+            if prev_pending_start is not None:
+                # Case A: force displacement from prev natural start
+                prev_pending_day   = date_to_workday(prev_pending_start, calendar, date_index)
+                actual_min_day     = prev_pending_day + abs(buf_days)
+            else:
+                # Case B: no prev data — anchor to first_buf_at
+                prev_pending_day   = None
+                actual_min_day     = delay_end_day
+
+            delayed_min_start[ji] = actual_min_day
+            floor_date = workday_to_date(actual_min_day, calendar)
             print(f"  Buffer OT {job['ot']}: frozen {first_pending_ti} task(s), "
-                  f"first pending: {tasks[first_pending_ti]['proceso']}, "
+                  f"first pending: {first_pending_proc}, "
                   f"min_start={floor_date} "
                   f"[buf={buf_days:+d}d, first_buf_at={first_buf_at}]")
         else:
