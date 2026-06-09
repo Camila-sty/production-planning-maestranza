@@ -496,18 +496,34 @@ def main():
     print(f"Jobs: {len(jobs)}  |  Processes: {len(proc_list)}  |  Calendar size: {CAL_SIZE} working days")
     print(f"Reference date: {ref_date}")
 
-    # --- Base dispatch (no buffer constraints) ---
-    # Used to determine which tasks a buffered job has completed by its buf_at date.
-    print("Running base dispatch for buffer analysis...")
-    base_scheduled = run_dispatch(jobs, job_tasks, proc_list, calendar, date_index)
+    # --- Load previous run's process schedules (for buffer freeze logic) ---
+    # We use the ACTUAL previous run's optimized_process_schedule to determine
+    # which tasks a buffered job had completed before its buffer date.
+    # A hypothetical fresh base dispatch is wrong: it re-schedules all jobs from
+    # scratch under current conditions, so the resulting dates can differ from
+    # the PREVIOUS run's actual dates, causing tasks that genuinely ran on
+    # e.g. 08-06 to be missed by the freeze check.
+    prev_run_id = active_run["id"] if active_run else None
+    prev_process_sched: dict = {}  # job_id -> {proceso: start_date (Python date)}
+    if prev_run_id:
+        cur.execute("""
+            SELECT sales_planning_id, proceso, start_date
+            FROM optimized_process_schedule
+            WHERE planning_run_id = %s
+        """, (prev_run_id,))
+        for row in cur.fetchall():
+            jid = row["sales_planning_id"]
+            if jid not in prev_process_sched:
+                prev_process_sched[jid] = {}
+            prev_process_sched[jid][row["proceso"]] = to_date(row["start_date"])
 
     # --- Compute buffer constraints from delta history ---
     # For each job with a non-zero accumulated negative buffer:
-    #   • Effective min_start is computed by applying each delta from its own date.
-    #     Negative delta → adds delay constraint (workday(at) + |delta|).
-    #     Positive delta → reduces accumulated constraint (recovery).
-    #   • Tasks whose base end_day ≤ freeze_point → freeze (pre_scheduled).
-    #   • First task NOT done by freeze_point → delayed to effective_min_start.
+    #   • effective_min_start is computed by applying each delta from its own date.
+    #   • Tasks that started BEFORE buf_at in the previous run are frozen at their
+    #     actual previous-run dates (pre_scheduled). They are not re-planned.
+    #   • The first task that started ON or AFTER buf_at (or has no previous record)
+    #     is the first "pending" task; it cannot start before delay_end_day.
     pre_scheduled:     dict = {}
     delayed_min_start: dict = {}
     end_date_floor:    dict = {}
@@ -538,25 +554,27 @@ def main():
         if effective_min_start <= 0 or buf_total >= 0:
             continue
 
-        # Freeze point = latest change date (most recent admin checkpoint)
-        latest_at  = history[-1][1]
-        buf_at_day = date_to_workday(latest_at, calendar, date_index)
+        # latest_at = date of the most recent buffer change (freeze boundary).
+        # Tasks that started BEFORE this date in the previous run are frozen.
+        # Tasks starting ON this date or later are "pending" (subject to delay).
+        latest_at     = history[-1][1]
+        buf_at_day    = date_to_workday(latest_at, calendar, date_index)
         delay_end_day = max(effective_min_start, buf_at_day)
 
+        prev_job_sched = prev_process_sched.get(job_id, {})  # {proceso: start_date}
+
         first_pending_ti = None
-        for ti, _ in enumerate(tasks):
-            base = base_scheduled.get((ji, ti))
-            if base is None:
-                if first_pending_ti is None:
-                    first_pending_ti = ti
-                break
-            if base[1] <= buf_at_day + 1:
-                # Task ends on or before freeze point — freeze at base date
-                pre_scheduled[(ji, ti)] = base
+        for ti, task in enumerate(tasks):
+            pname           = task["proceso"]
+            prev_start_date = prev_job_sched.get(pname)
+
+            if prev_start_date is not None and prev_start_date < latest_at:
+                # Task started before buf_at in the previous run → freeze it.
+                prev_start_day = date_to_workday(prev_start_date, calendar, date_index)
+                pre_scheduled[(ji, ti)] = (prev_start_day, prev_start_day + task["duration"])
             else:
-                # Task in-progress or future at freeze point — first pending
-                if first_pending_ti is None:
-                    first_pending_ti = ti
+                # No previous record, or started on/after buf_at → first pending.
+                first_pending_ti = ti
                 break
 
         if first_pending_ti is not None:
@@ -568,9 +586,9 @@ def main():
                   f"min_start=day {delay_end_day} ({floor_date}) "
                   f"[total_buf={buf_total:+d}d, {len(history)} change(s)]")
         else:
-            # All tasks done before freeze point — floor the end date
+            # All tasks started before buf_at → floor the end date
             end_date_floor[ji] = workday_to_date(delay_end_day, calendar)
-            print(f"  Buffer OT {job['ot']}: all tasks done before freeze, "
+            print(f"  Buffer OT {job['ot']}: all tasks started before buf_at, "
                   f"end_date floored at {end_date_floor[ji]}")
 
     # --- Actual dispatch (with buffer constraints) ---
