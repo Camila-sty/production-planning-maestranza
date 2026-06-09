@@ -568,98 +568,77 @@ def main():
     #
     # For each OT with negative planning_buffer_days:
     #
-    #   Part A — Freeze historical tramo (processes before first_buf_at)
-    #     Any process whose start_date in the PREVIOUS planning run is
-    #     STRICTLY BEFORE first_buf_at is locked at its previous-run dates.
-    #     These processes are not re-scheduled.
-    #     first_buf_at = date of the OLDEST planning_buffer_adjustment record.
-    #     Example: process on 08-06 is kept when first_buf_at=09-06. ✓
+    #   Part A — Freeze completed tramo (processes that FINISH before first_buf_at)
+    #     A process is frozen only if ALL its working days fall before first_buf_at,
+    #     i.e. prev_end_day (exclusive) <= first_buf_at_day.
     #
-    #   Part B — Delay pending tramo (first process on/after first_buf_at)
-    #     The first pending task cannot start before:
+    #     A process that STARTS before first_buf_at but EXTENDS INTO it is NOT
+    #     frozen — it belongs to the pending tramo and will be shifted forward.
+    #     This correctly handles tasks like TERMINACIONES starting 08-06 that run
+    #     through 09-06, 10-06, 11-06 (all shift-able days).
     #
-    #     Case A (prev data exists for that process):
-    #       min_start = prev_pending_start_workday + abs(planning_buffer_days)
-    #       Guarantees real displacement even when prev_start coincides with
-    #       workday(first_buf_at). delta semantics:
-    #         buffer -2 → -3 : same prev_pending_start, abs grows → +1 more day ✓
-    #         re-plan same buf: same prev_pending_start + same abs → same min_start ✓
+    #   Part B — Shift pending tramo from first_buf_at
+    #     All tasks from the first pending process onward are constrained to start
+    #     no earlier than:
     #
-    #     Case B (no prev data — new OT or all prior runs were empty):
     #       min_start = workday(first_buf_at) + abs(planning_buffer_days)
-    #       Fallback anchor when there is no reference point from a prior plan.
+    #
+    #     This shifts the entire pending calendar by exactly abs(buf_days) workdays
+    #     from the buffer anchor date.  The formula is stable and non-compounding:
+    #     first_buf_at is always the oldest adjustment record, so re-planning with
+    #     the same buffer always yields the same min_start regardless of which run
+    #     the dispatcher produced last time.
+    #
+    #     delta semantics:
+    #       buffer -2 → -3 : first_buf_at stays, abs grows → min_start +1 day ✓
+    #       buffer -3 → -1 : first_buf_at stays, abs shrinks → min_start -2 days ✓
+    #       re-plan same buf: same first_buf_at + same abs → same min_start ✓
     #
     pre_scheduled:     dict = {}
     delayed_min_start: dict = {}
     end_date_floor:    dict = {}
 
     for ji, (job, tasks) in enumerate(zip(jobs, job_tasks)):
-        buf_days      = job["buffer"]       # total accumulated (e.g. -3)
-        first_buf_at  = job["buffer_at"]    # oldest adjustment date (freeze boundary)
+        buf_days     = job["buffer"]    # total accumulated (e.g. -3)
+        first_buf_at = job["buffer_at"] # oldest adjustment date (shift anchor)
 
         if buf_days >= 0 or first_buf_at is None or not tasks:
             continue
 
         first_buf_at_day = date_to_workday(first_buf_at, calendar, date_index)
-        delay_end_day    = first_buf_at_day + abs(buf_days)
+        # Part B anchor: every pending process must start at or after this day.
+        min_start_day = first_buf_at_day + abs(buf_days)
 
         prev_job_sched = prev_process_sched.get(job["id"], {})  # {proceso: start_date}
 
-        # Part A: walk tasks in process order; freeze those that started before first_buf_at.
+        # Part A: walk tasks in order; freeze only those that finish before first_buf_at.
         first_pending_ti = None
         for ti, task in enumerate(tasks):
             prev_start = prev_job_sched.get(task["proceso"])
-            if prev_start is not None and prev_start < first_buf_at:
-                # Process ran before the buffer was ever registered → freeze it.
-                prev_start_day = date_to_workday(prev_start, calendar, date_index)
-                pre_scheduled[(ji, ti)] = (prev_start_day, prev_start_day + task["duration"])
-            else:
-                # No previous record, or started on/after first_buf_at → first pending.
-                first_pending_ti = ti
-                break
+            if prev_start is not None:
+                prev_start_day    = date_to_workday(prev_start, calendar, date_index)
+                prev_end_day_excl = prev_start_day + task["duration"]  # exclusive end
+                if prev_end_day_excl <= first_buf_at_day:
+                    # Entire process completes before buffer anchor → freeze it.
+                    pre_scheduled[(ji, ti)] = (prev_start_day, prev_end_day_excl)
+                    continue  # keep evaluating subsequent tasks
+            # Process overlaps first_buf_at (or has no prev data) → first pending.
+            first_pending_ti = ti
+            break
 
-        # Part B: constrain the pending tramo.
-        #
-        # Formula depends on whether we have prev-run data for the first pending process:
-        #
-        #   Case A — prev data exists:
-        #     min_start = prev_pending_start_workday + abs(buf_days)
-        #     This guarantees real displacement of exactly abs(buf_days) workdays
-        #     forward from where that process WAS in the previous plan.
-        #     Even if delay_end_day coincides with the natural start, the process
-        #     is still pushed forward. Non-compounding: prev_pending_start is
-        #     the actual date from the last plan, not today.
-        #
-        #   Case B — no prev data (new OT or all prior runs were empty):
-        #     min_start = workday(first_buf_at) + abs(buf_days)
-        #     Fallback: prevents the pending tramo from starting before the
-        #     buffer anchor date + the delay. Processes before first_buf_at
-        #     are not frozen (nothing to freeze), so the whole OT is delayed.
-        #
+        # Part B: apply shift constraint to pending tramo.
         if first_pending_ti is not None:
-            first_pending_proc = tasks[first_pending_ti]["proceso"]
-            prev_pending_start = prev_job_sched.get(first_pending_proc)
-
-            if prev_pending_start is not None:
-                # Case A: force displacement from prev natural start
-                prev_pending_day   = date_to_workday(prev_pending_start, calendar, date_index)
-                actual_min_day     = prev_pending_day + abs(buf_days)
-            else:
-                # Case B: no prev data — anchor to first_buf_at
-                prev_pending_day   = None
-                actual_min_day     = delay_end_day
-
-            delayed_min_start[ji] = actual_min_day
-            floor_date = workday_to_date(actual_min_day, calendar)
+            delayed_min_start[ji] = min_start_day
+            floor_date = workday_to_date(min_start_day, calendar)
             print(f"  Buffer OT {job['ot']}: frozen {first_pending_ti} task(s), "
-                  f"first pending: {first_pending_proc}, "
+                  f"first pending: {tasks[first_pending_ti]['proceso']}, "
                   f"min_start={floor_date} "
                   f"[buf={buf_days:+d}d, first_buf_at={first_buf_at}]")
         else:
-            # All processes started before first_buf_at → keep frozen,
-            # push the OT's reported end date to reflect the buffer.
-            end_date_floor[ji] = workday_to_date(delay_end_day, calendar)
-            print(f"  Buffer OT {job['ot']}: all processes before first_buf_at, "
+            # All processes finish before first_buf_at → nothing to shift in the
+            # dispatch; floor the reported end_date so the UI reflects the delay.
+            end_date_floor[ji] = workday_to_date(min_start_day, calendar)
+            print(f"  Buffer OT {job['ot']}: all processes finish before first_buf_at, "
                   f"end_date floored at {end_date_floor[ji]}")
 
     # --- Actual dispatch (with buffer constraints) ---
