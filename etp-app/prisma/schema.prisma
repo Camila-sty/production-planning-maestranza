@@ -134,7 +134,9 @@ model OptimizedProcessSchedule {
 model PlanningBufferAdjustment {
   id                String        @id @default(cuid())
   sales_planning_id String
-  buffer_days       Int
+  buffer_days       Int           // new total buffer after this change
+  prev_buffer_days  Int?          // total buffer before this change
+  delta_days        Int           @default(0) // buffer_days - prev_buffer_days
   note              String?
   created_at        DateTime      @default(now())
   created_by        String?

@@ -383,28 +383,44 @@ def main():
     if special_days:
         print(f"  Special working days loaded: {sorted(special_days)}")
 
-    # --- Load buffer adjustments ---
-    # Buffers persist until explicitly cleared (planning_buffer_days set to NULL).
-    # No timestamp filter: a buffer set before the last run still applies on re-plan.
+    # --- Load buffer history (delta-based) ---
+    # Reads the full change log from planning_buffer_adjustment.
+    # Each row is one incremental change: delta_days = new_total - prev_total.
+    #
+    # The planner applies each delta from its own registration date so that
+    # changing buffer from -2 to -3 adds only 1 more day of delay from the
+    # change date, not 3 days from scratch.  Multiple changes accumulate:
+    #
+    #   delta(-2, D1) → effective min_start ≥ D1 + 2
+    #   delta(-1, D2) → effective min_start ≥ max(D1+2, D2+1) = D2+1 (if D2>D1)
+    #   delta(+2, D3) → effective min_start reduced by 2 (recovery)
     cur.execute("""
-        SELECT id, planning_buffer_days, planning_buffer_at
-        FROM sales_planning
-        WHERE planning_buffer_days IS NOT NULL
-          AND planning_buffer_at IS NOT NULL
+        SELECT sales_planning_id, delta_days, created_at
+        FROM planning_buffer_adjustment
+        WHERE delta_days IS NOT NULL
+        ORDER BY created_at ASC
     """)
-    buffer_rows = cur.fetchall()
+    buf_hist_rows = cur.fetchall()
 
-    buffer_map: dict     = {}
-    buffer_at_map: dict  = {}
+    # Per-job delta history: job_id -> [(delta_days, date), ...] ASC
+    buffer_history: dict = {}
+    for row in buf_hist_rows:
+        jid   = row["sales_planning_id"]
+        d     = to_date(row["created_at"])
+        delta = row["delta_days"]
+        if jid and d and delta is not None:
+            if jid not in buffer_history:
+                buffer_history[jid] = []
+            buffer_history[jid].append((int(delta), d))
 
-    for row in buffer_rows:
-        buffer_map[row["id"]] = int(row["planning_buffer_days"])
-        d = to_date(row["planning_buffer_at"])
-        if d:
-            buffer_at_map[row["id"]] = d
+    # Accumulated total per job (used for job["buffer"] eligibility check and log)
+    buffer_total_map: dict = {
+        jid: sum(dlt for dlt, _ in hist)
+        for jid, hist in buffer_history.items()
+    }
 
-    if buffer_map:
-        print(f"  Buffer adjustments loaded: {len(buffer_map)} records")
+    if buffer_total_map:
+        print(f"  Buffer history loaded: {len(buffer_total_map)} jobs with adjustments")
 
     # --- Load jobs ---
     cur.execute("""
@@ -429,7 +445,7 @@ def main():
             "llegada":      llegada_date,
             "prioridad":    int(j["prioridad"]) if j["prioridad"] else 5,
             "atraso":       int(j["atraso"])    if j["atraso"]    else 0,
-            "buffer":       buffer_map.get(j["id"], 0),
+            "buffer":       buffer_total_map.get(j["id"], 0),
         })
 
     cur.execute(
@@ -485,50 +501,76 @@ def main():
     print("Running base dispatch for buffer analysis...")
     base_scheduled = run_dispatch(jobs, job_tasks, proc_list, calendar, date_index)
 
-    # --- Compute buffer constraints from base dispatch ---
-    # For each job with buf < 0:
-    #   • Tasks whose base end_day <= buf_at_day  → freeze (pre_scheduled)
-    #   • First task NOT yet done at buf_at        → delayed by abs(buf) workdays
+    # --- Compute buffer constraints from delta history ---
+    # For each job with a non-zero accumulated negative buffer:
+    #   • Effective min_start is computed by applying each delta from its own date.
+    #     Negative delta → adds delay constraint (workday(at) + |delta|).
+    #     Positive delta → reduces accumulated constraint (recovery).
+    #   • Tasks whose base end_day ≤ freeze_point → freeze (pre_scheduled).
+    #   • First task NOT done by freeze_point → delayed to effective_min_start.
     pre_scheduled:     dict = {}
     delayed_min_start: dict = {}
     end_date_floor:    dict = {}
 
     for ji, (job, tasks) in enumerate(zip(jobs, job_tasks)):
-        buf    = job["buffer"]
-        buf_at = buffer_at_map.get(job["id"])
-        if buf >= 0 or buf_at is None or not tasks:
+        job_id  = job["id"]
+        history = buffer_history.get(job_id)
+
+        if not history or not tasks:
             continue
 
-        buf_at_day    = date_to_workday(buf_at, calendar, date_index)
-        delay_end_day = buf_at_day + abs(buf)
+        buf_total = job["buffer"]  # accumulated sum of all deltas
+
+        # Compute effective min_start by processing each delta in chronological order.
+        effective_min_start = 0
+        for (delta_i, at_i) in history:  # already sorted ASC by created_at
+            at_day_i = date_to_workday(at_i, calendar, date_index)
+            if delta_i < 0:
+                # Delay: this change adds |delta| workdays of constraint from at_i
+                candidate = at_day_i + abs(delta_i)
+                effective_min_start = max(effective_min_start, candidate)
+            elif delta_i > 0:
+                # Recovery: reduce accumulated constraint by delta workdays
+                effective_min_start = max(0, effective_min_start - delta_i)
+
+        # No effective delay → skip.
+        # Also skip if the net accumulated buffer is non-negative (full recovery).
+        if effective_min_start <= 0 or buf_total >= 0:
+            continue
+
+        # Freeze point = latest change date (most recent admin checkpoint)
+        latest_at  = history[-1][1]
+        buf_at_day = date_to_workday(latest_at, calendar, date_index)
+        delay_end_day = max(effective_min_start, buf_at_day)
 
         first_pending_ti = None
         for ti, _ in enumerate(tasks):
             base = base_scheduled.get((ji, ti))
             if base is None:
-                # Task not scheduled in base (shouldn't happen for valid jobs)
                 if first_pending_ti is None:
                     first_pending_ti = ti
                 break
             if base[1] <= buf_at_day + 1:
-                # Task ends on or before buf_at — freeze it at its base date
+                # Task ends on or before freeze point — freeze at base date
                 pre_scheduled[(ji, ti)] = base
             else:
-                # Task is in-progress or future at buf_at — first pending
+                # Task in-progress or future at freeze point — first pending
                 if first_pending_ti is None:
                     first_pending_ti = ti
                 break
 
         if first_pending_ti is not None:
             delayed_min_start[ji] = delay_end_day
+            floor_date = workday_to_date(delay_end_day, calendar)
             print(f"  Buffer OT {job['ot']}: frozen {first_pending_ti} task(s), "
                   f"first pending ti={first_pending_ti} "
                   f"({tasks[first_pending_ti]['proceso']}), "
-                  f"min_start=day {delay_end_day} ({add_workdays(buf_at, abs(buf), calendar, date_index)})")
+                  f"min_start=day {delay_end_day} ({floor_date}) "
+                  f"[total_buf={buf_total:+d}d, {len(history)} change(s)]")
         else:
-            # All tasks done before buf_at — floor end_date
-            end_date_floor[ji] = add_workdays(buf_at, abs(buf), calendar, date_index)
-            print(f"  Buffer OT {job['ot']}: all tasks done before buf_at, "
+            # All tasks done before freeze point — floor the end date
+            end_date_floor[ji] = workday_to_date(delay_end_day, calendar)
+            print(f"  Buffer OT {job['ot']}: all tasks done before freeze, "
                   f"end_date floored at {end_date_floor[ji]}")
 
     # --- Actual dispatch (with buffer constraints) ---

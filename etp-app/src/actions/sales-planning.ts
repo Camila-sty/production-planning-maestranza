@@ -101,15 +101,38 @@ export async function upsertBuffer(
   if (!parsed.success) return { error: parsed.error.flatten().fieldErrors };
 
   try {
-    await prisma.salesPlanning.update({
+    // Read the current buffer to compute the incremental delta.
+    // delta = new - prev. The planner uses this delta history so that
+    // changing from -2 to -3 only adds 1 more day of delay (not 3 fresh days).
+    const current = await prisma.salesPlanning.findUnique({
       where: { id: salesPlanningId },
-      data: {
-        planning_buffer_days: parsed.data.buffer_days,
-        planning_buffer_note: parsed.data.note ?? null,
-        planning_buffer_at: new Date(),
-        updated_by: user.email,
-      },
+      select: { planning_buffer_days: true },
     });
+    const prevBuffer = current?.planning_buffer_days ?? 0;
+    const newBuffer  = parsed.data.buffer_days;
+    const deltaDays  = newBuffer - prevBuffer;
+
+    await prisma.$transaction([
+      prisma.salesPlanning.update({
+        where: { id: salesPlanningId },
+        data: {
+          planning_buffer_days: newBuffer,
+          planning_buffer_note: parsed.data.note ?? null,
+          planning_buffer_at:   new Date(),
+          updated_by: user.email,
+        },
+      }),
+      prisma.planningBufferAdjustment.create({
+        data: {
+          sales_planning_id: salesPlanningId,
+          buffer_days:       newBuffer,
+          prev_buffer_days:  prevBuffer,
+          delta_days:        deltaDays,
+          note:              parsed.data.note ?? null,
+          created_by:        user.email,
+        },
+      }),
+    ]);
 
     revalidatePath("/");
     return { success: true };
