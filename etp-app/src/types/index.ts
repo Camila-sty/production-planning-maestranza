@@ -12,6 +12,7 @@ export type SalesPlanning = {
   llegada: Date | null;
   inicio: Date | null;
   entregado: boolean;
+  fecha_entrega_real: Date | null;
   venta: string | null;
   color_eq: string | null;
   oc: string | null;

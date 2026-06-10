@@ -45,6 +45,7 @@ model SalesPlanning {
   color_cabina          String?
   atraso                Int?
   prioridad             Int?      @default(5)
+  fecha_entrega_real    DateTime?
   planning_buffer_days  Int?
   planning_buffer_note  String?
   planning_buffer_at    DateTime?

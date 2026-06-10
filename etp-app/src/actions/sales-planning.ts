@@ -46,6 +46,24 @@ export async function updateRecord(
   if (!parsed.success) return { error: parsed.error.flatten().fieldErrors };
 
   const { llegada, inicio, entregado, ...rest } = parsed.data;
+  const newEntregado = entregado ?? false;
+
+  // Auto-set fecha_entrega_real when transitioning entregado false → true
+  let fechaEntregaReal: Date | undefined;
+  const current = await prisma.salesPlanning.findUnique({
+    where: { id },
+    select: { entregado: true, fecha_entrega_real: true },
+  });
+  if (!current?.entregado && newEntregado && !current?.fecha_entrega_real) {
+    const activeRun = await prisma.planningRun.findFirst({ where: { status: "ACTIVE" } });
+    if (activeRun) {
+      const opt = await prisma.salesPlanningOptimized.findFirst({
+        where: { sales_planning_id: id, planning_run_id: activeRun.id },
+        select: { end_date: true },
+      });
+      if (opt?.end_date) fechaEntregaReal = new Date(opt.end_date);
+    }
+  }
 
   try {
     const record = await prisma.salesPlanning.update({
@@ -54,7 +72,8 @@ export async function updateRecord(
         ...rest,
         llegada: llegada ? new Date(llegada) : null,
         inicio: inicio ? new Date(inicio) : null,
-        entregado: entregado ?? false,
+        entregado: newEntregado,
+        ...(fechaEntregaReal !== undefined ? { fecha_entrega_real: fechaEntregaReal } : {}),
         updated_by: user.email,
       },
     });

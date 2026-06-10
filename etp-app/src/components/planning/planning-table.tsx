@@ -614,9 +614,13 @@ export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: Plan
                     </td>
                   )}
 
-                  {/* Entrega Estimada — from active planning run */}
+                  {/* Entrega Estimada — from active planning run, or stored fecha_entrega_real for delivered */}
                   <td className="px-3 py-2.5 text-zinc-300 whitespace-nowrap tabular-nums text-xs">
-                    {estimatedEnd ? fmtShort(estimatedEnd) : <span className="text-zinc-700">—</span>}
+                    {estimatedEnd
+                      ? fmtShort(estimatedEnd)
+                      : r.fecha_entrega_real
+                        ? fmtShort(new Date(r.fecha_entrega_real).toISOString().slice(0, 10))
+                        : <span className="text-zinc-700">—</span>}
                   </td>
 
                   {/* Estado — Al día / Atrasado based on buffer */}
