@@ -107,9 +107,9 @@ export default async function HomePage() {
           <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5 space-y-6">
             <div>
               <p className="text-xs text-zinc-500 mb-3">
-                Ejecuta el solucionador OR-Tools CP-SAT sobre todos los equipos con Código Plazo, Llegada y Prioridad definidos.
+                Ejecuta el solucionador OR-Tools CP-SAT sobre todos los equipos con Código Plazo, Inicio y Prioridad definidos.
                 Respeta capacidades por proceso y optimiza según prioridad y atraso.
-                Equipos sin fecha de llegada son excluidos automáticamente.
+                Equipos sin fecha de Inicio son excluidos automáticamente.
               </p>
               <PlanButton hasResults={hasResults} hasPrevious={hasPrevious} isAdmin={isAdmin} />
             </div>

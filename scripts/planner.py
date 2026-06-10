@@ -175,7 +175,7 @@ def run_dispatch(
     """
     ordered_procs = sorted(proc_list, key=lambda p: p["orden"])
     proc_cap      = {p["proceso"]: p["capacidad_por_dia"] for p in proc_list}
-    llegada_days  = [
+    inicio_days  = [
         date_to_workday(j["inicio"], calendar, date_index) for j in jobs
     ]
 
@@ -220,7 +220,7 @@ def run_dispatch(
                     continue                        # all tasks done
                 if jtasks[ti]["proceso"] != pname:
                     continue                        # next task is a different process
-                if llegada_days[ji2] > d:
+                if inicio_days[ji2] > d:
                     continue                        # equipment not arrived yet
                 # Buffer delay: the first non-frozen task has a min start day
                 if (delayed_min_start and ji2 in delayed_min_start
@@ -254,8 +254,8 @@ def run_dispatch(
                         wreason = "already finished"
                     elif job_tasks[wji][wti]["proceso"] != pname:
                         wreason = f"next process={job_tasks[wji][wti]['proceso']}"
-                    elif llegada_days[wji] > d:
-                        wreason = f"not arrived (inicio day {llegada_days[wji]} > {d})"
+                    elif inicio_days[wji] > d:
+                        wreason = f"not arrived (inicio day {inicio_days[wji]} > {d})"
                     elif (delayed_min_start and wji in delayed_min_start
                           and wti == first_delayed_ti.get(wji, 0)
                           and d < delayed_min_start[wji]):
