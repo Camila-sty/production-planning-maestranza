@@ -192,6 +192,14 @@ export async function GET() {
       .map((d) => toDateKey(d.date))
   );
 
+  // Build endDateMap from active run: salesPlanningId → end_date string
+  const endDateMap: Record<string, Date | null> = {};
+  for (const o of optimized) {
+    if (o.sales_planning_id && o.end_date) {
+      endDateMap[o.sales_planning_id] = new Date(o.end_date);
+    }
+  }
+
   const wb = new ExcelJS.Workbook();
   wb.creator = "ETP Sistema de Planificación";
   wb.created = new Date();
@@ -228,7 +236,7 @@ export async function GET() {
       r.vin ?? "",
       fmtDate(r.llegada),
       fmtDate(r.inicio),
-      fmtDate(r.fecha_entrega_real),
+      r.fecha_entrega_real ? fmtDate(r.fecha_entrega_real) : fmtDate(endDateMap[r.id] ?? null),
       r.venta ?? "",
       r.color_eq ?? "",
       r.oc ?? "",
