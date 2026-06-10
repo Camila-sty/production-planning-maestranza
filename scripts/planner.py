@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """
-CP-SAT Planning Engine for ETP Maestranza — v4 (PostgreSQL)
+CP-SAT Planning Engine for ETP Maestranza — v5 (INICIO-based dispatch)
 
-Changes from v3:
-  - Database: SQLite → Supabase PostgreSQL via psycopg2
-  - Objective fix: start_weight now scales correctly for priorities 1..N (was hardcoded for 1..10)
-  - SQL: PostgreSQL-compatible syntax (no ORDER BY/LIMIT in UPDATE, %s placeholders)
+Changes from v4:
+  - Eligibility: uses campo INICIO (not LLEGADA) as minimum start date
+  - LLEGADA is now informational only — never used for dispatch logic
+  - Variable renamed: llegada_days → inicio_days (avoids llegada confusion)
+  - Priority cap removed: accepts any integer >= 1
 
 Eligibility for planning:
   - requires: codigo_plazo, inicio, prioridad
   - llegada is informational only
   - atraso defaults to 0 if null
 """
+
+PLANNER_VERSION = "5"
 
 import sys
 import os
@@ -296,6 +299,7 @@ def run_dispatch(
 # ---------------------------------------------------------------------------
 
 def main():
+    print(f"=== ETP Planner v{PLANNER_VERSION} — eligibility uses INICIO (not LLEGADA) ===")
     conn = psycopg2.connect(load_db_url(), sslmode="require")
     cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 

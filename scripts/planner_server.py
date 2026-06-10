@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ETP Planner Microservice
+ETP Planner Microservice — v2
 ========================
 Flask server that runs planner.py on demand.
 Deploy to Railway with the variables below.
