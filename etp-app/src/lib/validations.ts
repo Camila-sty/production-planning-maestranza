@@ -26,10 +26,12 @@ export const salesPlanningSchema = z.object({
   cliente: z.string().optional(),
   // Required for planning
   codigo_plazo: z.string().min(1, "Requerido"),
-  prioridad: z.coerce.number().int().min(1, "Mínimo 1").max(10, "Máximo 10"),
+  prioridad: z.coerce.number().int().min(1, "Mínimo 1"),
   atraso: z.coerce.number().int(),
-  // llegada is optional — records without llegada won't be included in planning
+  // llegada is informational only
   llegada: z.string().optional(),
+  // inicio drives planning — records without inicio are excluded
+  inicio: z.string().optional(),
   // Optional fields
   equipo: z.string().optional(),
   modelo_capacidad: z.string().optional(),

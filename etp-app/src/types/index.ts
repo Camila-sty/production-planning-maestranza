@@ -10,6 +10,7 @@ export type SalesPlanning = {
   modelo: string | null;
   vin: string | null;
   llegada: Date | null;
+  inicio: Date | null;
   venta: string | null;
   color_eq: string | null;
   oc: string | null;

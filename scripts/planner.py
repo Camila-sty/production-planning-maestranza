@@ -8,7 +8,8 @@ Changes from v3:
   - SQL: PostgreSQL-compatible syntax (no ORDER BY/LIMIT in UPDATE, %s placeholders)
 
 Eligibility for planning:
-  - requires: codigo_plazo, llegada, prioridad
+  - requires: codigo_plazo, inicio, prioridad
+  - llegada is informational only
   - atraso defaults to 0 if null
 """
 
@@ -150,8 +151,8 @@ def run_dispatch(
     Each working day, for each process (in proc order):
       1. Count active slots (tasks already running today).
       2. Collect eligible jobs: next pending process = this process,
-         arrived, predecessor finished at or before today.
-      3. Sort eligible: prioridad ASC, llegada ASC, id ASC.
+         arrived (inicio ≤ today), predecessor finished at or before today.
+      3. Sort eligible: prioridad ASC, inicio ASC, id ASC.
       4. Assign available slots in priority order.
          No capacity is left idle while eligible work exists.
          Priority only competes among jobs eligible on the same day —
@@ -175,7 +176,7 @@ def run_dispatch(
     ordered_procs = sorted(proc_list, key=lambda p: p["orden"])
     proc_cap      = {p["proceso"]: p["capacidad_por_dia"] for p in proc_list}
     llegada_days  = [
-        date_to_workday(j["llegada"], calendar, date_index) for j in jobs
+        date_to_workday(j["inicio"], calendar, date_index) for j in jobs
     ]
 
     # Seed scheduled with any frozen (pre-scheduled) tasks
@@ -234,7 +235,7 @@ def run_dispatch(
 
             eligible.sort(key=lambda ji2: (
                 jobs[ji2]["prioridad"],
-                jobs[ji2]["llegada"],
+                jobs[ji2]["inicio"],
                 jobs[ji2]["id"],
             ))
 
@@ -254,7 +255,7 @@ def run_dispatch(
                     elif job_tasks[wji][wti]["proceso"] != pname:
                         wreason = f"next process={job_tasks[wji][wti]['proceso']}"
                     elif llegada_days[wji] > d:
-                        wreason = f"not arrived (llegada day {llegada_days[wji]} > {d})"
+                        wreason = f"not arrived (inicio day {llegada_days[wji]} > {d})"
                     elif (delayed_min_start and wji in delayed_min_start
                           and wti == first_delayed_ti.get(wji, 0)
                           and d < delayed_min_start[wji]):
@@ -424,26 +425,27 @@ def main():
 
     # --- Load jobs ---
     cur.execute("""
-        SELECT id, ot, codigo_plazo, llegada, prioridad, atraso
+        SELECT id, ot, codigo_plazo, llegada, inicio, prioridad, atraso
         FROM sales_planning
         WHERE codigo_plazo IS NOT NULL
-          AND llegada    IS NOT NULL
+          AND inicio     IS NOT NULL
           AND prioridad  IS NOT NULL
     """)
     jobs_raw = cur.fetchall()
 
     jobs = []
     for j in jobs_raw:
-        llegada_date = to_date(j["llegada"])
-        if not llegada_date:
-            print(f"  Skipping job {j['id']}: invalid llegada '{j['llegada']}'")
+        inicio_date = to_date(j["inicio"])
+        if not inicio_date:
+            print(f"  Skipping job {j['id']}: invalid inicio '{j['inicio']}'")
             continue
         buf_setting = buffer_settings.get(j["id"], (0, None))
         jobs.append({
             "id":           j["id"],
             "ot":           str(j["ot"]).strip() if j["ot"] is not None else "",
             "codigo_plazo": str(j["codigo_plazo"]).strip(),
-            "llegada":      llegada_date,
+            "llegada":      to_date(j["llegada"]),  # informational only
+            "inicio":       inicio_date,
             "prioridad":    int(j["prioridad"]) if j["prioridad"] else 5,
             "atraso":       int(j["atraso"])    if j["atraso"]    else 0,
             "buffer":       buf_setting[0],
@@ -456,11 +458,11 @@ def main():
     total_records = cur.fetchone()["c"]
     excluded_count = total_records - len(jobs)
     if excluded_count > 0:
-        print(f"  Excluded {excluded_count} record(s) without llegada from planning")
+        print(f"  Excluded {excluded_count} record(s) without inicio from planning")
 
 
     if not jobs:
-        print("No plannable jobs found (need codigo_plazo + llegada + prioridad).")
+        print("No plannable jobs found (need codigo_plazo + inicio + prioridad).")
         conn.close()
         return
 
@@ -485,12 +487,12 @@ def main():
             print(f"  WARNING: Job {job['id']} (codigo_plazo={cp}) has no applicable processes.")
 
     # --- Build working calendar ---
-    min_llegada = min(j["llegada"] for j in jobs)
-    ref_date    = min_llegada - timedelta(days=min_llegada.weekday())
+    min_inicio = min(j["inicio"] for j in jobs)
+    ref_date   = min_inicio - timedelta(days=min_inicio.weekday())
 
-    max_sum_dur         = max((sum(t["duration"] for t in tasks) for tasks in job_tasks if tasks), default=100)
-    max_llegada_offset  = max((j["llegada"] - ref_date).days for j in jobs)
-    HORIZON             = max_llegada_offset + max_sum_dur * 3 + 300
+    max_sum_dur        = max((sum(t["duration"] for t in tasks) for tasks in job_tasks if tasks), default=100)
+    max_inicio_offset  = max((j["inicio"] - ref_date).days for j in jobs)
+    HORIZON            = max_inicio_offset + max_sum_dur * 3 + 300
 
     calendar   = build_working_calendar(ref_date, HORIZON, special_days)
     date_index = build_date_index(calendar)

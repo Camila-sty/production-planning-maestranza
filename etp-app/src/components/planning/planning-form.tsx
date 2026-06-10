@@ -18,6 +18,7 @@ import { useState } from "react";
 interface PlanningFormProps {
   record?: SalesPlanning;
   onSuccess?: () => void;
+  defaultPrioridad?: number;
 }
 
 function formatDate(d: Date | null | undefined) {
@@ -49,7 +50,8 @@ const textFields: {
   { name: "camion", label: "Camión" },
   { name: "modelo", label: "Modelo" },
   { name: "vin", label: "VIN" },
-  { name: "llegada", label: "Llegada", type: "date", hint: "Sin fecha → excluido de planificación" },
+  { name: "llegada", label: "Llegada", type: "date", hint: "Solo informativa" },
+  { name: "inicio", label: "Inicio", type: "date", hint: "Sin fecha → excluido de planificación" },
   { name: "venta", label: "Venta" },
   { name: "color_eq", label: "Color Equipo" },
   { name: "oc", label: "OC" },
@@ -63,7 +65,7 @@ const textFields: {
 ];
 
 /** "Nuevo Registro" — original flat grid layout */
-export function PlanningForm({ onSuccess }: Pick<PlanningFormProps, "onSuccess">) {
+export function PlanningForm({ onSuccess, defaultPrioridad }: Pick<PlanningFormProps, "onSuccess" | "defaultPrioridad">) {
   const [loading, setLoading] = useState(false);
 
   const {
@@ -74,7 +76,7 @@ export function PlanningForm({ onSuccess }: Pick<PlanningFormProps, "onSuccess">
   } = useForm<SalesPlanningFormInput>({
     resolver: zodResolver(salesPlanningSchema),
     defaultValues: {
-      prioridad: 5,
+      prioridad: defaultPrioridad ?? 1,
       atraso: 0,
       cotizacion: false,
     },
@@ -205,7 +207,8 @@ const EDIT_SECTIONS: { title: string; fields: FieldDef[] }[] = [
   {
     title: "Fechas y planificación",
     fields: [
-      { name: "llegada", label: "Llegada", type: "date", hint: "Sin fecha → excluido de planificación" },
+      { name: "llegada", label: "Llegada", type: "date", hint: "Solo informativa" },
+      { name: "inicio", label: "Inicio", type: "date", hint: "Sin fecha → excluido de planificación" },
       { name: "prioridad", label: "Prioridad (1=alta)", type: "number" },
     ],
   },
@@ -230,7 +233,7 @@ const EDIT_SECTIONS: { title: string; fields: FieldDef[] }[] = [
 ];
 
 /** "Editar Registro" — sectioned layout, no atraso field */
-export function PlanningEditForm({ record, onSuccess }: Required<PlanningFormProps>) {
+export function PlanningEditForm({ record, onSuccess }: { record: SalesPlanning; onSuccess: () => void }) {
   const [loading, setLoading] = useState(false);
 
   const {
@@ -250,6 +253,7 @@ export function PlanningEditForm({ record, onSuccess }: Required<PlanningFormPro
       modelo: n2u(record.modelo),
       vin: n2u(record.vin),
       llegada: formatDate(record.llegada) || undefined,
+      inicio: formatDate(record.inicio) || undefined,
       venta: n2u(record.venta),
       color_eq: n2u(record.color_eq),
       oc: n2u(record.oc),

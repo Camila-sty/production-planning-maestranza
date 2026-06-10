@@ -13,13 +13,14 @@ export async function createRecord(data: z.infer<typeof salesPlanningSchema>) {
   const parsed = salesPlanningSchema.safeParse(data);
   if (!parsed.success) return { error: parsed.error.flatten().fieldErrors };
 
-  const { llegada, ...rest } = parsed.data;
+  const { llegada, inicio, ...rest } = parsed.data;
 
   try {
     const record = await prisma.salesPlanning.create({
       data: {
         ...rest,
         llegada: llegada ? new Date(llegada) : null,
+        inicio: inicio ? new Date(inicio) : null,
         created_by: user.email,
         updated_by: user.email,
       },
@@ -43,7 +44,7 @@ export async function updateRecord(
   const parsed = salesPlanningSchema.safeParse(data);
   if (!parsed.success) return { error: parsed.error.flatten().fieldErrors };
 
-  const { llegada, ...rest } = parsed.data;
+  const { llegada, inicio, ...rest } = parsed.data;
 
   try {
     const record = await prisma.salesPlanning.update({
@@ -51,6 +52,7 @@ export async function updateRecord(
       data: {
         ...rest,
         llegada: llegada ? new Date(llegada) : null,
+        inicio: inicio ? new Date(inicio) : null,
         updated_by: user.email,
       },
     });

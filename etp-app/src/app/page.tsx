@@ -48,6 +48,8 @@ export default async function HomePage() {
   const hasResults = optimizedRaw.length > 0;
   const hasPrevious = previousRun != null;
 
+  const maxPrioridad = records.reduce((m, r) => Math.max(m, (r as { prioridad?: number | null }).prioridad ?? 0), 0);
+
   // Build endDateMap: salesPlanningId → end_date from ACTIVE run
   // Store only the calendar date (YYYY-MM-DD) to avoid timezone shifts in fmtShort.
   const endDateMap: Record<string, string> = {};
@@ -82,7 +84,7 @@ export default async function HomePage() {
         <section>
           <SectionTitle>Nuevo Registro</SectionTitle>
           <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5">
-            <PlanningForm />
+            <PlanningForm defaultPrioridad={maxPrioridad + 1} />
           </div>
         </section>
 

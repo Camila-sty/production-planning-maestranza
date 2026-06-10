@@ -31,6 +31,7 @@ model SalesPlanning {
   modelo                String?
   vin                   String?
   llegada               DateTime?
+  inicio                DateTime?
   venta                 String?
   color_eq              String?
   oc                    String?

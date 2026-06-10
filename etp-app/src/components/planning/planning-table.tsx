@@ -35,6 +35,7 @@ const COL_TYPE: Record<string, "text" | "number" | "date"> = {
   equipo: "text",
   vin: "text",
   llegada: "date",
+  inicio: "date",
   prioridad: "number",
   buffer: "number",
   entrega_estimada: "date",
@@ -54,6 +55,7 @@ function getSortValue(
     case "equipo": return r.equipo ?? null;
     case "vin": return r.vin ?? null;
     case "llegada": return r.llegada ? new Date(r.llegada).toISOString() : null;
+    case "inicio": return r.inicio ? new Date(r.inicio).toISOString() : null;
     case "prioridad": return r.prioridad ?? null;
     case "buffer": return r.planning_buffer_days ?? null;
     case "entrega_estimada": return endDateMap[r.id] ?? null;
@@ -271,8 +273,8 @@ export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: Plan
       r.modelo?.toLowerCase().includes(q);
     const matchesArrival =
       arrivalFilter === "all" ||
-      (arrivalFilter === "with" && r.llegada != null) ||
-      (arrivalFilter === "without" && r.llegada == null);
+      (arrivalFilter === "with" && r.inicio != null) ||
+      (arrivalFilter === "without" && r.inicio == null);
     const isAtrasadoRecord = (r.planning_buffer_days ?? 0) < 0;
     const matchesEstado =
       estadoFilter === "all" ||
@@ -350,6 +352,7 @@ export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: Plan
     { key: "equipo",           label: "Equipo" },
     { key: "vin",              label: "VIN" },
     { key: "llegada",          label: "Llegada" },
+    { key: "inicio",           label: "Inicio" },
     { key: "prioridad",        label: "Prioridad" },
     ...(isAdmin ? [{ key: "buffer", label: "Buffer" }] : []),
     { key: "entrega_estimada", label: "Fecha Entrega" },
@@ -471,9 +474,9 @@ export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: Plan
           onChange={(e) => { setArrivalFilter(e.target.value as "all" | "with" | "without"); setPage(1); }}
           className="h-8 px-2.5 rounded-md border border-zinc-700 bg-zinc-800/50 text-sm text-zinc-300 focus:outline-none focus:border-amber-500 cursor-pointer"
         >
-          <option value="all">Llegada</option>
-          <option value="with">Con llegada</option>
-          <option value="without">Sin llegada</option>
+          <option value="all">Inicio</option>
+          <option value="with">Con inicio</option>
+          <option value="without">Sin inicio</option>
         </select>
         <select
           value={estadoFilter}
@@ -547,7 +550,12 @@ export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: Plan
 
                   {/* Llegada */}
                   <td className="px-3 py-2.5 text-zinc-400 whitespace-nowrap">
-                    {r.llegada ? fmtDate(r.llegada) : <span className="text-zinc-600 italic text-xs">Sin fecha</span>}
+                    {r.llegada ? fmtDate(r.llegada) : <span className="text-zinc-600 italic text-xs">—</span>}
+                  </td>
+
+                  {/* Inicio */}
+                  <td className="px-3 py-2.5 text-zinc-300 whitespace-nowrap">
+                    {r.inicio ? fmtDate(r.inicio) : <span className="text-zinc-600 italic text-xs">Sin fecha</span>}
                   </td>
 
                   {/* Prioridad */}

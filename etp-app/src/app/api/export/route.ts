@@ -200,7 +200,7 @@ export async function GET() {
   const summaryHeaders = [
     "Posición", "OT", "Cliente Interno", "Cliente", "Código Plazo",
     "Equipo", "Modelo/Capacidad", "Camión", "Modelo", "VIN",
-    "Llegada", "Inicio Planif.", "Fin Planif.",
+    "Llegada", "Inicio", "Inicio Planif.", "Fin Planif.",
     "Prioridad", "Atraso (días)", "Color", "OC", "Factura",
   ];
 
@@ -221,6 +221,7 @@ export async function GET() {
       r?.modelo ?? "",
       r?.vin ?? "",
       fmtDate(r?.llegada),
+      fmtDate(r?.inicio),
       fmtDate(o.start_date),
       fmtDate(o.end_date),
       o.prioridad ?? r?.prioridad ?? "",
