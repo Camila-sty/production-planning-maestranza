@@ -266,6 +266,7 @@ export function PlanningEditForm({ record, onSuccess }: { record: SalesPlanning;
       color_cabina: n2u(record.color_cabina),
       atraso: n2u(record.atraso) ?? 0,
       prioridad: record.prioridad ?? 5,
+      entregado: record.entregado ? "true" : "false",
     },
   });
 
@@ -320,11 +321,22 @@ export function PlanningEditForm({ record, onSuccess }: { record: SalesPlanning;
           ]),
         ])}
 
-        {/* Cotización */}
+        {/* Estado de entrega */}
         <div className="col-span-2 flex items-center gap-3 pt-4 pb-1">
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500 whitespace-nowrap">Otros</span>
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500 whitespace-nowrap">Estado de entrega</span>
           <div className="flex-1 h-px bg-zinc-800" />
         </div>
+        <Label htmlFor="edit-entregado" className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide">
+          Entregado
+        </Label>
+        <select
+          id="edit-entregado"
+          {...register("entregado")}
+          className="etp-modal-input"
+        >
+          <option value="false">NO</option>
+          <option value="true">SÍ</option>
+        </select>
         <Label htmlFor="edit-cotizacion" className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide">
           Cotización
         </Label>

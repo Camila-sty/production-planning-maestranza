@@ -14,7 +14,7 @@ Eligibility for planning:
   - atraso defaults to 0 if null
 """
 
-PLANNER_VERSION = "5"
+PLANNER_VERSION = "6"
 
 import sys
 import os
@@ -299,7 +299,7 @@ def run_dispatch(
 # ---------------------------------------------------------------------------
 
 def main():
-    print(f"=== ETP Planner v{PLANNER_VERSION} — eligibility uses INICIO (not LLEGADA) ===")
+    print(f"=== ETP Planner v{PLANNER_VERSION} — eligibility: INICIO + entregado=FALSE ===")
     conn = psycopg2.connect(load_db_url(), sslmode="require")
     cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
@@ -434,6 +434,7 @@ def main():
         WHERE codigo_plazo IS NOT NULL
           AND inicio     IS NOT NULL
           AND prioridad  IS NOT NULL
+          AND entregado  = FALSE
     """)
     jobs_raw = cur.fetchall()
 

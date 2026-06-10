@@ -32,6 +32,7 @@ model SalesPlanning {
   vin                   String?
   llegada               DateTime?
   inicio                DateTime?
+  entregado             Boolean   @default(false)
   venta                 String?
   color_eq              String?
   oc                    String?

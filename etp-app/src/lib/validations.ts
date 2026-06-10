@@ -32,6 +32,8 @@ export const salesPlanningSchema = z.object({
   llegada: z.string().optional(),
   // inicio drives planning — records without inicio are excluded
   inicio: z.string().optional(),
+  // entregado: excluded from planning when true
+  entregado: z.preprocess((v) => v === "true" || v === true, z.boolean()).optional().default(false),
   // Optional fields
   equipo: z.string().optional(),
   modelo_capacidad: z.string().optional(),

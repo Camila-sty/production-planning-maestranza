@@ -140,6 +140,10 @@ export async function GET() {
     ? { planning_run_id: activeRun.id }
     : { start_date: { not: null as null } };
 
+  const allRecords = await prisma.salesPlanning.findMany({
+    orderBy: { created_at: "asc" },
+  });
+
   const [optimized, schedules] = await Promise.all([
     prisma.salesPlanningOptimized.findMany({
       where: { ...activeFilter, start_date: { not: null } },
@@ -193,43 +197,60 @@ export async function GET() {
   wb.created = new Date();
 
   // =========================================================================
-  // Sheet 1 — Planificación (summary)
+  // Sheet 1 — Registros (all records)
   // =========================================================================
-  const ws1 = wb.addWorksheet("Planificación");
+  const ws1 = wb.addWorksheet("Registros");
 
   const summaryHeaders = [
-    "Posición", "OT", "Cliente Interno", "Cliente", "Código Plazo",
+    "OT", "Cliente Interno", "Cliente", "Código Plazo",
     "Equipo", "Modelo/Capacidad", "Camión", "Modelo", "VIN",
-    "Llegada", "Inicio", "Inicio Planif.", "Fin Planif.",
-    "Prioridad", "Atraso (días)", "Color", "OC", "Factura",
+    "Llegada", "Inicio", "Venta", "Color Equipo", "OC", "Factura",
+    "Patente", "VIN", "N° Recepción", "Color Cabina",
+    "Neumático Repuesto", "Correo", "Cotización", "Entregado",
+    "Prioridad", "Atraso (días)",
+    "Creado por", "Fecha Creación",
   ];
 
   ws1.addRow(summaryHeaders);
   styleHeaderRow(ws1.getRow(1), summaryHeaders.length);
 
-  for (const o of optimized) {
-    const r = o.sales_planning;
-    ws1.addRow([
-      o.position,
-      r?.ot ?? "",
-      r?.clte_interno ?? "",
-      r?.cliente ?? "",
-      r?.codigo_plazo ?? "",
-      r?.equipo ?? "",
-      r?.modelo_capacidad ?? "",
-      r?.camion ?? "",
-      r?.modelo ?? "",
-      r?.vin ?? "",
-      fmtDate(r?.llegada),
-      fmtDate(r?.inicio),
-      fmtDate(o.start_date),
-      fmtDate(o.end_date),
-      o.prioridad ?? r?.prioridad ?? "",
-      r?.atraso ?? "",
-      r?.color_eq ?? "",
-      r?.oc ?? "",
-      r?.factura ?? "",
+  for (const r of allRecords) {
+    const dataRow = ws1.addRow([
+      r.ot ?? "",
+      r.clte_interno ?? "",
+      r.cliente ?? "",
+      r.codigo_plazo ?? "",
+      r.equipo ?? "",
+      r.modelo_capacidad ?? "",
+      r.camion ?? "",
+      r.modelo ?? "",
+      r.vin ?? "",
+      fmtDate(r.llegada),
+      fmtDate(r.inicio),
+      r.venta ?? "",
+      r.color_eq ?? "",
+      r.oc ?? "",
+      r.factura ?? "",
+      r.patente ?? "",
+      r.vin ?? "",
+      r.n_recepcion ?? "",
+      r.color_cabina ?? "",
+      r.neumatico_de_repuesto ?? "",
+      r.correo ?? "",
+      r.cotizacion ? "SÍ" : "NO",
+      r.entregado ? "SÍ" : "NO",
+      r.prioridad ?? "",
+      r.atraso ?? "",
+      r.created_by ?? "",
+      fmtDate(r.created_at),
     ]);
+    if (r.entregado) {
+      for (let c = 1; c <= summaryHeaders.length; c++) {
+        const cell = dataRow.getCell(c);
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF9C4" } };
+        cell.font = { ...cell.font, color: { argb: "FF5D4037" } };
+      }
+    }
   }
 
   autoWidthSheet(ws1);

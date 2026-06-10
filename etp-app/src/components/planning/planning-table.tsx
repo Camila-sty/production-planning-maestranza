@@ -36,6 +36,7 @@ const COL_TYPE: Record<string, "text" | "number" | "date"> = {
   vin: "text",
   llegada: "date",
   inicio: "date",
+  entregado: "text",
   prioridad: "number",
   buffer: "number",
   entrega_estimada: "date",
@@ -56,6 +57,7 @@ function getSortValue(
     case "vin": return r.vin ?? null;
     case "llegada": return r.llegada ? new Date(r.llegada).toISOString() : null;
     case "inicio": return r.inicio ? new Date(r.inicio).toISOString() : null;
+    case "entregado": return r.entregado ? "SÍ" : "NO";
     case "prioridad": return r.prioridad ?? null;
     case "buffer": return r.planning_buffer_days ?? null;
     case "entrega_estimada": return endDateMap[r.id] ?? null;
@@ -237,6 +239,7 @@ export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: Plan
   const [search, setSearch] = useState("");
   const [arrivalFilter, setArrivalFilter] = useState<"all" | "with" | "without">("all");
   const [estadoFilter, setEstadoFilter] = useState<"all" | "al-dia" | "atrasado">("all");
+  const [entregadoFilter, setEntregadoFilter] = useState<"all" | "no" | "si">("all");
   const [editingRecord, setEditingRecord] = useState<SalesPlanning | null>(null);
   const [bufferRecord, setBufferRecord] = useState<SalesPlanning | null>(null);
   const [confirmDeleteRecord, setConfirmDeleteRecord] = useState<SalesPlanning | null>(null);
@@ -280,7 +283,11 @@ export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: Plan
       estadoFilter === "all" ||
       (estadoFilter === "atrasado" && isAtrasadoRecord) ||
       (estadoFilter === "al-dia" && !isAtrasadoRecord);
-    return matchesText && matchesArrival && matchesEstado;
+    const matchesEntregado =
+      entregadoFilter === "all" ||
+      (entregadoFilter === "si" && r.entregado) ||
+      (entregadoFilter === "no" && !r.entregado);
+    return matchesText && matchesArrival && matchesEstado && matchesEntregado;
   });
 
   const sorted = sortCol
@@ -353,6 +360,7 @@ export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: Plan
     { key: "vin",              label: "VIN" },
     { key: "llegada",          label: "Llegada" },
     { key: "inicio",           label: "Inicio" },
+    { key: "entregado",        label: "Entregado" },
     { key: "prioridad",        label: "Prioridad" },
     ...(isAdmin ? [{ key: "buffer", label: "Buffer" }] : []),
     { key: "entrega_estimada", label: "Fecha Entrega" },
@@ -487,6 +495,15 @@ export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: Plan
           <option value="al-dia">Al día</option>
           <option value="atrasado">Atrasado</option>
         </select>
+        <select
+          value={entregadoFilter}
+          onChange={(e) => { setEntregadoFilter(e.target.value as "all" | "no" | "si"); setPage(1); }}
+          className="h-8 px-2.5 rounded-md border border-zinc-700 bg-zinc-800/50 text-sm text-zinc-300 focus:outline-none focus:border-amber-500 cursor-pointer"
+        >
+          <option value="all">Entregado</option>
+          <option value="no">No entregado</option>
+          <option value="si">Entregado</option>
+        </select>
         <span className="text-xs text-zinc-500">{filtered.length} registro{filtered.length !== 1 ? "s" : ""} en total</span>
       </div>
 
@@ -556,6 +573,19 @@ export function PlanningTable({ records, endDateMap, historyMap, isAdmin }: Plan
                   {/* Inicio */}
                   <td className="px-3 py-2.5 text-zinc-300 whitespace-nowrap">
                     {r.inicio ? fmtDate(r.inicio) : <span className="text-zinc-600 italic text-xs">Sin fecha</span>}
+                  </td>
+
+                  {/* Entregado */}
+                  <td className="px-3 py-2.5">
+                    {r.entregado ? (
+                      <Badge className="text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                        SÍ
+                      </Badge>
+                    ) : (
+                      <Badge className="text-xs bg-zinc-700/40 text-zinc-500 border border-zinc-700/50">
+                        NO
+                      </Badge>
+                    )}
                   </td>
 
                   {/* Prioridad */}
