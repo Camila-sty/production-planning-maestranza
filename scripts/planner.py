@@ -470,6 +470,12 @@ def main():
         conn.close()
         return
 
+    # Debug: log key fields for OT 2455 to verify correct field usage
+    for _j in jobs:
+        if _j.get("ot") == "2455":
+            print(f"  [DEBUG OT 2455] llegada={_j['llegada']}  inicio={_j['inicio']}  "
+                  f"earliest_dispatch=inicio  buffer={_j['buffer']:+d}d")
+
     # --- Build task list per job ---
     job_tasks: list = []
     for job in jobs:
@@ -619,15 +625,27 @@ def main():
         prev_job_sched = prev_process_sched.get(job["id"], {})  # {proceso: start_date}
 
         # Part A: walk tasks in order; freeze only those that finish before first_buf_at.
+        # IMPORTANT: baseline dates may predate `inicio` (e.g. when the field was changed
+        # from llegada to a later date after the original plan was generated).  We clamp
+        # each baseline start to max(baseline_start, inicio) so that no frozen task is
+        # ever placed before the job's minimum start date.
+        inicio_day       = date_to_workday(job["inicio"], calendar, date_index)
         first_pending_ti = None
         for ti, task in enumerate(tasks):
             prev_start = prev_job_sched.get(task["proceso"])
             if prev_start is not None:
-                prev_start_day    = date_to_workday(prev_start, calendar, date_index)
+                raw_start_day     = date_to_workday(prev_start, calendar, date_index)
+                # Clamp: never freeze a task before inicio even if baseline predates it.
+                prev_start_day    = max(raw_start_day, inicio_day)
                 prev_end_day_excl = prev_start_day + task["duration"]  # exclusive end
                 if prev_end_day_excl <= first_buf_at_day:
                     # Entire process completes before buffer anchor → freeze it.
                     pre_scheduled[(ji, ti)] = (prev_start_day, prev_end_day_excl)
+                    if job["ot"] == "2455":
+                        print(f"    [DEBUG OT 2455] freeze {task['proceso']}: "
+                              f"raw_start={workday_to_date(raw_start_day, calendar)} "
+                              f"clamped_start={workday_to_date(prev_start_day, calendar)} "
+                              f"(inicio={job['inicio']})")
                     continue  # keep evaluating subsequent tasks
                 if prev_start_day < first_buf_at_day:
                     # Process started before buffer_at but extends into it (straddles).
@@ -686,6 +704,14 @@ def main():
         sys.exit(1)
 
     print(f"Dispatch complete.  {len(jobs)} jobs scheduled.")
+
+    # Debug: verify OT 2455 first-process start
+    for ji, job in enumerate(jobs):
+        if job.get("ot") == "2455" and job_tasks[ji]:
+            first_start_day = scheduled[(ji, 0)][0]
+            first_date      = workday_to_date(first_start_day, calendar)
+            print(f"  [DEBUG OT 2455] first process start_date={first_date}  "
+                  f"(must be >= inicio={job['inicio']})")
 
     # --- Compute slot assignments per process ---
     proc_task_list: dict = {p["proceso"]: [] for p in proc_list}
