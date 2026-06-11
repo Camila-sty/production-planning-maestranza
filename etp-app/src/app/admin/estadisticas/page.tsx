@@ -97,9 +97,10 @@ export default async function EstadisticasPage() {
   if (!user) redirect("/auth/login");
   if (!user.isAdmin) redirect("/");
 
-  // Load all buffer adjustments where the resulting buffer is negative
+  // Load all buffer adjustments where the delta is negative
+  // (delta_days = buffer_nuevo - buffer_anterior < 0 → worsening delay)
   const adjustments = await prisma.planningBufferAdjustment.findMany({
-    where: { buffer_days: { lt: 0 } },
+    where: { delta_days: { lt: 0 } },
     orderBy: { created_at: "asc" },
     include: {
       sales_planning: { select: { ot: true } },

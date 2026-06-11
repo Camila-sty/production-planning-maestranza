@@ -25,18 +25,19 @@ interface StatsViewProps {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
+// 11 hues spread ~33° apart on the color wheel — maximally distinct on dark bg
 const PROC_COLORS: Record<string, string> = {
-  "INSPECCIÓN":         "#E879F9",
-  "INGENIERÍA":         "#FCD34D",
-  "CORTE":              "#60A5FA",
-  "PLEGADO":            "#A78BFA",
-  "ARMADO":             "#34D399",
-  "REMATE":             "#FB923C",
-  "MONTAJE":            "#22D3EE",
-  "HIDRÁULICA":         "#38BDF8",
-  "PINTURA":            "#818CF8",
-  "TERMINACIONES":      "#4ADE80",
-  "CONTROL DE CALIDAD": "#F87171",
+  "INSPECCIÓN":         "#EF4444", // red        0°
+  "INGENIERÍA":         "#F97316", // orange    33°
+  "CORTE":              "#FBBF24", // amber     65°
+  "PLEGADO":            "#84CC16", // lime      98°
+  "ARMADO":             "#10B981", // emerald  131°
+  "REMATE":             "#14B8A6", // teal     164°
+  "MONTAJE":            "#38BDF8", // sky      196°
+  "HIDRÁULICA":         "#3B82F6", // blue     229°
+  "PINTURA":            "#8B5CF6", // violet   262°
+  "TERMINACIONES":      "#D946EF", // fuchsia  295°
+  "CONTROL DE CALIDAD": "#F43F5E", // rose     327°
 };
 
 function procColor(p: string): string {
@@ -372,7 +373,7 @@ export function StatsView({ processes, events }: StatsViewProps) {
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-zinc-900/95">
                 <tr className="border-b border-zinc-800">
-                  {["Fecha", "OT", "Proceso", "Buffer nuevo", "Buffer anterior"].map(h => (
+                  {["Fecha", "OT", "Proceso", "Buffer nuevo", "Buffer anterior", "Delta"].map(h => (
                     <th key={h} className="px-4 py-2.5 text-left text-[10px] uppercase tracking-wider font-medium text-zinc-500">
                       {h}
                     </th>
@@ -394,7 +395,10 @@ export function StatsView({ processes, events }: StatsViewProps) {
                     </td>
                     <td className="px-4 py-2 text-red-400 font-mono text-xs">{e.buffer_days}d</td>
                     <td className="px-4 py-2 text-zinc-500 font-mono text-xs">
-                      {e.prev_buffer_days !== undefined ? `${e.prev_buffer_days}d` : "—"}
+                      {e.prev_buffer_days != null ? `${e.prev_buffer_days}d` : "—"}
+                    </td>
+                    <td className="px-4 py-2 text-red-400 font-mono text-xs font-semibold">
+                      {e.prev_buffer_days != null ? `${e.buffer_days - e.prev_buffer_days}d` : "—"}
                     </td>
                   </tr>
                 ))}
