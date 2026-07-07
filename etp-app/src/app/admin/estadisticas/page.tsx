@@ -139,6 +139,7 @@ export default async function EstadisticasPage() {
     ot: adj.sales_planning?.ot ?? null,
     buffer_days: adj.buffer_days,
     prev_buffer_days: adj.prev_buffer_days,
+    note: adj.note ?? null,
   }));
 
   return (

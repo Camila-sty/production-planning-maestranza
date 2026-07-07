@@ -11,7 +11,11 @@ export type DelayEvent = {
   ot: string | null;
   buffer_days: number;
   prev_buffer_days: number | null;
+  note: string | null;
 };
+
+type SortKey = "date" | "ot" | "proceso" | "buffer_days" | "prev_buffer_days" | "delta" | "note";
+type SortDir = "asc" | "desc";
 
 type ChartPoint = {
   date: string;
@@ -65,6 +69,17 @@ export function StatsView({ processes, events }: StatsViewProps) {
   const [to, setTo]     = useState("");
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const chartRef = useRef<HTMLDivElement>(null);
+  const [sortKey, setSortKey] = useState<SortKey>("date");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  function handleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir(d => d === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
 
   // ── Filtered events ────────────────────────────────────────────────────────
 
@@ -362,51 +377,104 @@ export function StatsView({ processes, events }: StatsViewProps) {
       </div>
 
       {/* Detail events table */}
-      {filteredEvents.length > 0 && (
-        <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl overflow-hidden">
-          <div className="px-5 py-3 border-b border-zinc-800 flex items-center gap-2">
-            <div className="w-0.5 h-4 bg-amber-500 rounded-full" />
-            <h3 className="text-sm font-medium text-white">Detalle de Eventos</h3>
-            <span className="text-xs text-zinc-600 ml-1">({filteredEvents.length})</span>
-          </div>
-          <div className="overflow-x-auto max-h-80 overflow-y-auto">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-zinc-900/95">
-                <tr className="border-b border-zinc-800">
-                  {["Fecha", "OT", "Proceso", "Buffer nuevo", "Buffer anterior", "Delta"].map(h => (
-                    <th key={h} className="px-4 py-2.5 text-left text-[10px] uppercase tracking-wider font-medium text-zinc-500">
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {[...filteredEvents].reverse().map(e => (
-                  <tr key={e.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/20 transition-colors">
-                    <td className="px-4 py-2 text-zinc-400 text-xs tabular-nums whitespace-nowrap">
-                      {fmtShort(e.date)}
-                    </td>
-                    <td className="px-4 py-2 text-amber-400 font-mono text-xs">{e.ot ?? "—"}</td>
-                    <td className="px-4 py-2">
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: procColor(e.proceso) }} />
-                        <span className="text-zinc-300 text-xs">{e.proceso}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-2 text-red-400 font-mono text-xs">{e.buffer_days}d</td>
-                    <td className="px-4 py-2 text-zinc-500 font-mono text-xs">
-                      {e.prev_buffer_days != null ? `${e.prev_buffer_days}d` : "—"}
-                    </td>
-                    <td className="px-4 py-2 text-red-400 font-mono text-xs font-semibold">
-                      {e.prev_buffer_days != null ? `${e.buffer_days - e.prev_buffer_days}d` : "—"}
-                    </td>
+      {filteredEvents.length > 0 && (() => {
+        const columns: { key: SortKey; label: string }[] = [
+          { key: "date",             label: "Fecha" },
+          { key: "ot",               label: "OT" },
+          { key: "proceso",          label: "Proceso" },
+          { key: "buffer_days",      label: "Buffer nuevo" },
+          { key: "prev_buffer_days", label: "Buffer anterior" },
+          { key: "delta",            label: "Delta" },
+          { key: "note",             label: "Nota" },
+        ];
+
+        const sorted = [...filteredEvents].sort((a, b) => {
+          let av: string | number | null;
+          let bv: string | number | null;
+          if (sortKey === "delta") {
+            av = a.prev_buffer_days != null ? a.buffer_days - a.prev_buffer_days : null;
+            bv = b.prev_buffer_days != null ? b.buffer_days - b.prev_buffer_days : null;
+          } else if (sortKey === "note") {
+            av = a.note ?? "";
+            bv = b.note ?? "";
+          } else {
+            av = a[sortKey] as string | number | null;
+            bv = b[sortKey] as string | number | null;
+          }
+          // nulls last
+          if (av == null && bv == null) return 0;
+          if (av == null) return 1;
+          if (bv == null) return -1;
+          const cmp = typeof av === "number" && typeof bv === "number"
+            ? av - bv
+            : String(av).localeCompare(String(bv));
+          return sortDir === "asc" ? cmp : -cmp;
+        });
+
+        return (
+          <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl overflow-hidden">
+            <div className="px-5 py-3 border-b border-zinc-800 flex items-center gap-2">
+              <div className="w-0.5 h-4 bg-amber-500 rounded-full" />
+              <h3 className="text-sm font-medium text-white">Detalle de Eventos</h3>
+              <span className="text-xs text-zinc-600 ml-1">({filteredEvents.length})</span>
+            </div>
+            <div className="overflow-x-auto max-h-80 overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-zinc-900/95">
+                  <tr className="border-b border-zinc-800">
+                    {columns.map(col => (
+                      <th
+                        key={col.key}
+                        onClick={() => handleSort(col.key)}
+                        className="px-4 py-2.5 text-left text-[10px] uppercase tracking-wider font-medium text-zinc-500 cursor-pointer select-none hover:text-zinc-300 whitespace-nowrap transition-colors"
+                      >
+                        <span className="flex items-center gap-1">
+                          {col.label}
+                          {sortKey === col.key
+                            ? <span className="text-amber-400">{sortDir === "asc" ? "↑" : "↓"}</span>
+                            : <span className="text-zinc-700">↕</span>
+                          }
+                        </span>
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {sorted.map(e => {
+                    const delta = e.prev_buffer_days != null ? e.buffer_days - e.prev_buffer_days : null;
+                    return (
+                      <tr key={e.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/20 transition-colors">
+                        <td className="px-4 py-2 text-zinc-400 text-xs tabular-nums whitespace-nowrap">
+                          {fmtShort(e.date)}
+                        </td>
+                        <td className="px-4 py-2 text-amber-400 font-mono text-xs">{e.ot ?? "—"}</td>
+                        <td className="px-4 py-2">
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: procColor(e.proceso) }} />
+                            <span className="text-zinc-300 text-xs">{e.proceso}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-2 text-red-400 font-mono text-xs">{e.buffer_days}d</td>
+                        <td className="px-4 py-2 text-zinc-500 font-mono text-xs">
+                          {e.prev_buffer_days != null ? `${e.prev_buffer_days}d` : "—"}
+                        </td>
+                        <td className="px-4 py-2 font-mono text-xs font-semibold">
+                          <span className={delta != null && delta < 0 ? "text-red-400" : "text-zinc-400"}>
+                            {delta != null ? `${delta}d` : "—"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 text-zinc-400 text-xs max-w-[200px]">
+                          {e.note ?? "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
