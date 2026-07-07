@@ -359,9 +359,52 @@ function RegisterForm() {
 
 function translateSupabaseError(message: string): string {
   const msg = message.toLowerCase();
+
+  // Registration / email
   if (msg.includes("already registered") || msg.includes("already exists") || msg.includes("user already")) {
     return "Este correo ya está registrado.";
   }
+  if (msg.includes("unable to validate email") || msg.includes("invalid email") || msg.includes("valid email")) {
+    return "El correo ingresado no es válido.";
+  }
+  if (msg.includes("email not confirmed")) {
+    return "El correo no ha sido confirmado. Revisa tu bandeja de entrada y haz clic en el enlace de activación.";
+  }
+  if (msg.includes("email link is invalid") || msg.includes("token has expired") || msg.includes("otp expired")) {
+    return "El enlace expiró o ya fue usado. Solicita uno nuevo.";
+  }
+
+  // Password
+  if (msg.includes("password should be at least") || msg.includes("password must be at least") || msg.includes("password is too short")) {
+    return "La contraseña es demasiado corta. Debe tener al menos 6 caracteres.";
+  }
+  if (msg.includes("password should contain") || msg.includes("weak password") || msg.includes("password is too weak")) {
+    return "La contraseña es demasiado débil. Usa letras, números y caracteres especiales.";
+  }
+
+  // Login
+  if (msg.includes("invalid login credentials") || msg.includes("invalid credentials") || msg.includes("wrong password")) {
+    return "Correo o contraseña incorrectos.";
+  }
+
+  // Rate limits
+  if (msg.includes("rate limit") || msg.includes("too many requests") || msg.includes("request rate")) {
+    return "Demasiados intentos. Espera unos minutos antes de intentarlo nuevamente.";
+  }
+  if (msg.includes("for security purposes") || msg.includes("only request this after")) {
+    return "Por seguridad, espera unos segundos antes de intentarlo nuevamente.";
+  }
+
+  // Network / server
+  if (msg.includes("failed to fetch") || msg.includes("network") || msg.includes("fetch")) {
+    return "Error de conexión. Verifica tu internet e intenta de nuevo.";
+  }
+
+  // Signup disabled
+  if (msg.includes("signup is disabled") || msg.includes("signups not allowed")) {
+    return "El registro está deshabilitado. Contacta al administrador.";
+  }
+
   return message;
 }
 
@@ -415,7 +458,7 @@ function SupabaseAuthPanel({
       if (mode === "login") {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) {
-          setServerError("Correo o contraseña incorrectos.");
+          setServerError(translateSupabaseError(error.message));
           return;
         }
         router.push("/");
