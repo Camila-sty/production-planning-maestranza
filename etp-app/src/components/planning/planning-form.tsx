@@ -56,7 +56,6 @@ const textFields: {
   { name: "color_eq", label: "Color Equipo" },
   { name: "oc", label: "OC" },
   { name: "factura", label: "Factura" },
-  { name: "correo", label: "Correo", type: "email" },
   { name: "patente", label: "Patente" },
   { name: "neumatico_de_repuesto", label: "Neumático Repuesto" },
   { name: "n_recepcion", label: "N° Recepción" },
@@ -218,7 +217,6 @@ const EDIT_SECTIONS: { title: string; fields: FieldDef[] }[] = [
       { name: "venta", label: "Venta" },
       { name: "oc", label: "OC" },
       { name: "factura", label: "Factura" },
-      { name: "correo", label: "Correo", type: "email" },
     ],
   },
   {
@@ -259,7 +257,6 @@ export function PlanningEditForm({ record, onSuccess }: { record: SalesPlanning;
       oc: n2u(record.oc),
       factura: n2u(record.factura),
       cotizacion: record.cotizacion ?? false,
-      correo: n2u(record.correo),
       patente: n2u(record.patente),
       neumatico_de_repuesto: n2u(record.neumatico_de_repuesto),
       n_recepcion: n2u(record.n_recepcion),

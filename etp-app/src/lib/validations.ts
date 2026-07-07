@@ -75,7 +75,6 @@ export const salesPlanningSchema = z.object({
   oc: z.string().optional(),
   factura: z.string().optional(),
   cotizacion: z.boolean().optional().default(false),
-  correo: z.string().email("Email inválido").optional().or(z.literal("")),
   patente: z.string().optional(),
   neumatico_de_repuesto: z.string().optional(),
   n_recepcion: z.string().optional(),

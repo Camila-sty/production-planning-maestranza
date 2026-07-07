@@ -18,7 +18,6 @@ export type SalesPlanning = {
   oc: string | null;
   factura: string | null;
   cotizacion: boolean;
-  correo: string | null;
   patente: string | null;
   neumatico_de_repuesto: string | null;
   n_recepcion: string | null;

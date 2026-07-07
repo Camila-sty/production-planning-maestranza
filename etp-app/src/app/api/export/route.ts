@@ -215,7 +215,7 @@ export async function GET() {
     "Llegada", "Inicio", "Fecha Entrega",
     "Venta", "Color Equipo", "OC", "Factura",
     "Patente", "N° Recepción", "Color Cabina",
-    "Neumático Repuesto", "Correo", "Cotización", "Entregado",
+    "Neumático Repuesto", "Cotización", "Entregado",
     "Prioridad", "Atraso (días)",
     "Creado por", "Fecha Creación",
   ];
@@ -245,7 +245,6 @@ export async function GET() {
       r.n_recepcion ?? "",
       r.color_cabina ?? "",
       r.neumatico_de_repuesto ?? "",
-      r.correo ?? "",
       r.cotizacion ? "SÍ" : "NO",
       r.entregado ? "SÍ" : "NO",
       r.prioridad ?? "",
