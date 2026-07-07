@@ -279,6 +279,11 @@ function RegisterForm() {
         {errors.email && (
           <p className="text-xs text-red-400">{errors.email.message}</p>
         )}
+        {!errors.email && (
+          <p className="text-xs text-amber-400/80 bg-amber-950/30 border border-amber-800/40 rounded-lg px-3 py-2 leading-relaxed">
+            Asegúrate de que este correo existe y tienes acceso a él. Si el correo no existe, no podrás iniciar sesión.
+          </p>
+        )}
       </div>
 
       <div className="space-y-1.5">
@@ -548,6 +553,11 @@ function SupabaseAuthPanel({
                 autoComplete="email"
                 className="bg-zinc-800/70 border-zinc-700 text-white placeholder:text-zinc-600 focus:border-amber-500 h-11"
               />
+              {mode === "signup" && (
+                <p className="text-xs text-amber-400/80 bg-amber-950/30 border border-amber-800/40 rounded-lg px-3 py-2 leading-relaxed">
+                  Asegúrate de que este correo existe y tienes acceso a él. Recibirás un enlace de activación; si el correo no existe, no podrás iniciar sesión.
+                </p>
+              )}
             </div>
 
             {/* Password */}
