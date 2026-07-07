@@ -1,14 +1,13 @@
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { ALLOWED_EMAIL_DOMAINS } from "@/lib/validations";
 
 export type AppUser = { id: string; email: string; isAdmin: boolean };
 
-/** Domain allowed for new registrations. */
-export const ALLOWED_DOMAIN = "@etpequipos.cl";
-
-/** Returns true if the email belongs to the allowed corporate domain. */
+/** Returns true if the email belongs to an allowed corporate domain. */
 export function isAllowedDomain(email: string): boolean {
-  return email.trim().toLowerCase().endsWith(ALLOWED_DOMAIN);
+  const domain = email.trim().toLowerCase().split("@")[1];
+  return !!domain && (ALLOWED_EMAIL_DOMAINS as readonly string[]).includes(domain);
 }
 
 /**

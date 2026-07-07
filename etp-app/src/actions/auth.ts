@@ -46,7 +46,7 @@ export async function localRegister(
   }
 
   if (!isAllowedDomain(email)) {
-    return { error: "Solo se permiten correos corporativos @etpequipos.cl" };
+    return { error: "Solo se permiten correos corporativos con los dominios @equiposycamiones.cl, @pto.cl o @etpequipos.cl." };
   }
 
   const existing = await prisma.localUser.findUnique({ where: { email } });

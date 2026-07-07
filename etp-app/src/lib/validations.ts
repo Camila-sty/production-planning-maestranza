@@ -1,9 +1,28 @@
 import { z } from "zod";
 
-export const localLoginSchema = z.object({
-  email: z.string().email("Correo inválido"),
-  password: z.string().min(1, "Ingresa tu contraseña"),
-});
+export const ALLOWED_EMAIL_DOMAINS = [
+  "equiposycamiones.cl",
+  "pto.cl",
+  "etpequipos.cl",
+] as const;
+
+const DOMAIN_ERROR =
+  "Solo se permiten correos corporativos con los dominios @equiposycamiones.cl, @pto.cl o @etpequipos.cl.";
+
+function hasAllowedDomain(email: string): boolean {
+  const domain = email.trim().toLowerCase().split("@")[1];
+  return !!domain && (ALLOWED_EMAIL_DOMAINS as readonly string[]).includes(domain);
+}
+
+export const localLoginSchema = z
+  .object({
+    email: z.string().email("Correo inválido"),
+    password: z.string().min(1, "Ingresa tu contraseña"),
+  })
+  .refine((d) => hasAllowedDomain(d.email), {
+    message: DOMAIN_ERROR,
+    path: ["email"],
+  });
 
 export const localRegisterSchema = z
   .object({
@@ -15,6 +34,10 @@ export const localRegisterSchema = z
   .refine((d) => d.password === d.confirmPassword, {
     message: "Las contraseñas no coinciden",
     path: ["confirmPassword"],
+  })
+  .refine((d) => hasAllowedDomain(d.email), {
+    message: DOMAIN_ERROR,
+    path: ["email"],
   });
 
 export type LocalLoginInput = z.infer<typeof localLoginSchema>;

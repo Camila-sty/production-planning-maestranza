@@ -9,9 +9,18 @@ import { localLogin, localRegister } from "@/actions/auth";
 import {
   localLoginSchema,
   localRegisterSchema,
+  ALLOWED_EMAIL_DOMAINS,
   type LocalLoginInput,
   type LocalRegisterInput,
 } from "@/lib/validations";
+
+const DOMAIN_ERROR =
+  "Solo se permiten correos corporativos con los dominios @equiposycamiones.cl, @pto.cl o @etpequipos.cl.";
+
+function hasAllowedDomain(email: string): boolean {
+  const domain = email.trim().toLowerCase().split("@")[1];
+  return !!domain && (ALLOWED_EMAIL_DOMAINS as readonly string[]).includes(domain);
+}
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -392,6 +401,12 @@ function SupabaseAuthPanel({
 
     setLoading(true);
     try {
+      if (!hasAllowedDomain(email)) {
+        setServerError(DOMAIN_ERROR);
+        setLoading(false);
+        return;
+      }
+
       if (mode === "login") {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) {
@@ -402,10 +417,6 @@ function SupabaseAuthPanel({
         router.refresh();
 
       } else {
-        if (!email.trim().toLowerCase().endsWith("@etpequipos.cl")) {
-          setServerError("Solo se permiten correos corporativos @etpequipos.cl");
-          return;
-        }
         const { error } = await supabase.auth.signUp({
           email,
           password,
