@@ -1,12 +1,14 @@
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
-import { ALLOWED_EMAIL_DOMAINS } from "@/lib/validations";
+import { ALLOWED_EMAIL_DOMAINS, ADMIN_EMAIL_EXCEPTIONS } from "@/lib/validations";
 
 export type AppUser = { id: string; email: string; isAdmin: boolean };
 
-/** Returns true if the email belongs to an allowed corporate domain. */
+/** Returns true if the email is allowed: either a corporate domain or an admin exception. */
 export function isAllowedDomain(email: string): boolean {
-  const domain = email.trim().toLowerCase().split("@")[1];
+  const normalized = email.trim().toLowerCase();
+  if ((ADMIN_EMAIL_EXCEPTIONS as readonly string[]).includes(normalized)) return true;
+  const domain = normalized.split("@")[1];
   return !!domain && (ALLOWED_EMAIL_DOMAINS as readonly string[]).includes(domain);
 }
 

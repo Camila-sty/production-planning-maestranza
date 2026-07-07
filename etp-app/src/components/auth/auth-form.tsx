@@ -10,6 +10,7 @@ import {
   localLoginSchema,
   localRegisterSchema,
   ALLOWED_EMAIL_DOMAINS,
+  ADMIN_EMAIL_EXCEPTIONS,
   type LocalLoginInput,
   type LocalRegisterInput,
 } from "@/lib/validations";
@@ -18,7 +19,9 @@ const DOMAIN_ERROR =
   "Solo se permiten correos corporativos con los dominios @equiposycamiones.cl, @pto.cl o @etpequipos.cl.";
 
 function hasAllowedDomain(email: string): boolean {
-  const domain = email.trim().toLowerCase().split("@")[1];
+  const normalized = email.trim().toLowerCase();
+  if ((ADMIN_EMAIL_EXCEPTIONS as readonly string[]).includes(normalized)) return true;
+  const domain = normalized.split("@")[1];
   return !!domain && (ALLOWED_EMAIL_DOMAINS as readonly string[]).includes(domain);
 }
 import { Button } from "@/components/ui/button";

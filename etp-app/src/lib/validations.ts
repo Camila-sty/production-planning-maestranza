@@ -6,11 +6,18 @@ export const ALLOWED_EMAIL_DOMAINS = [
   "etpequipos.cl",
 ] as const;
 
+export const ADMIN_EMAIL_EXCEPTIONS = [
+  "camila.estay.callealta@gmail.com",
+  "cpestay@uc.cl",
+] as const;
+
 const DOMAIN_ERROR =
   "Solo se permiten correos corporativos con los dominios @equiposycamiones.cl, @pto.cl o @etpequipos.cl.";
 
 function hasAllowedDomain(email: string): boolean {
-  const domain = email.trim().toLowerCase().split("@")[1];
+  const normalized = email.trim().toLowerCase();
+  if ((ADMIN_EMAIL_EXCEPTIONS as readonly string[]).includes(normalized)) return true;
+  const domain = normalized.split("@")[1];
   return !!domain && (ALLOWED_EMAIL_DOMAINS as readonly string[]).includes(domain);
 }
 
