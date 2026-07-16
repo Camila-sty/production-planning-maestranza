@@ -1,0 +1,4 @@
+flask>=3.0,<4.0
+gunicorn>=21.0,<24.0
+ortools>=9.8,<10.0
+psycopg2-binary>=2.9,<3.0
